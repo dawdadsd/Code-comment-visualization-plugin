@@ -27,7 +27,7 @@ export type MethodId = Brand<string, "MethodId">;
 /**
  * FilePath type
  */
-export type FilePath = Brand<string, 'FilePath'>;
+export type FilePath = Brand<string, "FilePath">;
 export declare const LineNumber: (n: number) => LineNumber;
 export declare const MethodId: (id: string) => MethodId;
 export declare const FilePath: (path: string) => FilePath;
@@ -117,39 +117,39 @@ export interface ClassDoc {
 }
 /**
  * Extension → Webview 的下行消息
+ * updateView : 刷新整个视图
+ * highlightMethod : 高亮某个方法
+ * clearView : 清空视图
  */
 export type DownstreamMessage = {
-    readonly type: 'updateView';
+    readonly type: "updateView";
     readonly payload: ClassDoc;
 } | {
-    readonly type: 'highlightMethod';
+    readonly type: "highlightMethod";
     readonly payload: {
         id: MethodId;
     };
 } | {
-    readonly type: 'clearView';
+    readonly type: "clearView";
 };
 /**
-* Webview → Extension 的上行消息
-*/
+ * Webview → Extension 的上行消息
+ */
 export type UpstreamMessage = {
-    readonly type: 'jumpToLine';
+    readonly type: "jumpToLine";
     readonly payload: {
         line: LineNumber;
     };
 } | {
-    readonly type: 'webviewReady';
+    readonly type: "webviewReady";
 };
 /**
  * 类型守卫 - 运行时检查消息是否合法
  *
- * 【为什么需要类型守卫？】
- * postMessage 传来的数据是 unknown 类型（可能是任何东西）
- * 我们需要在运行时验证它确实是 UpstreamMessage
- *
- * 【is 关键字的作用】
- * 告诉 TypeScript：如果这个函数返回 true，
- * 那么参数 value 的类型就是 UpstreamMessage
+ *@implNote : 为什么我们需要 类型守卫？
+              postMessage 传来的数据是 unknown 类型（可能是任何东西）
+ *            我们需要在运行时验证它确实是 UpstreamMessage
+              is -> tell TypeScript if true ,value is UpstreamMessage
  */
 export declare function isUpstreamMessage(value: unknown): value is UpstreamMessage;
 /**

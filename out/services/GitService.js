@@ -80,24 +80,25 @@ class GitService {
      * 获取类的 Git 信息（原始作者 + 最后修改者）
      */
     async getClassGitInfo(filePath, classLine) {
+        const workDir = path.dirname(filePath);
+        const fileName = path.basename(filePath);
+        // 先获取类声明行的最后修改者；即使后续 git log 失败也能回退展示。
+        const lastModifier = await this.getBlameForLine(filePath, classLine);
+        let originalAuthor = '';
         try {
-            const workDir = path.dirname(filePath);
-            const fileName = path.basename(filePath);
             // 获取文件的第一次提交作者（原始作者）
-            const { stdout: logOutput } = await execAsync(`git log --follow --diff-filter=A --format="%an|%ad" --date=short -- "${fileName}" | tail -1`, { cwd: workDir, timeout: 5000 });
-            // 获取类声明行的最后修改者
-            const lastModifier = await this.getBlameForLine(filePath, classLine);
-            const [originalAuthor] = logOutput.trim().split('|');
-            return {
-                author: originalAuthor || lastModifier?.author || 'Unknown',
-                lastModifier: lastModifier?.author || 'Unknown',
-                lastModifyDate: lastModifier?.date || '',
-            };
+            // 注意：不要用 "| tail -1" 之类的管道命令，Windows 默认 shell 不支持。
+            const { stdout: logOutput } = await execAsync(`git log --follow --diff-filter=A --reverse -n 1 --format="%an|%ad" --date=short -- "${fileName}"`, { cwd: workDir, timeout: 5000 });
+            originalAuthor = logOutput.trim().split('|')[0] ?? '';
         }
         catch (error) {
-            console.debug('[GitService] Get class git info failed:', error);
-            return null;
+            console.debug('[GitService] Get original author failed:', error);
         }
+        return {
+            author: originalAuthor || lastModifier?.author || 'Unknown',
+            lastModifier: lastModifier?.author || 'Unknown',
+            lastModifyDate: lastModifier?.date || '',
+        };
     }
     /**
      * 批量获取多行的 blame 信息（更高效）

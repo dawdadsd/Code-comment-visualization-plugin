@@ -11,41 +11,30 @@
  * 【WebviewViewProvider 是什么？】
  * VS Code 提供的接口，用于创建侧边栏中的 Webview
  * 实现这个接口，VS Code 就知道如何显示你的侧边栏
+ * @author : xiaowu
+ * @since : 2026/02/04
  */
-import * as vscode from 'vscode';
-import type { WebviewView, WebviewViewProvider, WebviewViewResolveContext, CancellationToken, TextDocument, Disposable } from 'vscode';
+import * as vscode from "vscode";
+import type { WebviewView, WebviewViewProvider, WebviewViewResolveContext, CancellationToken, TextDocument, Disposable } from "vscode";
 /**
  * Webview 侧边栏 Provider
- *
- * 【implements 关键字】
- * 表示这个类实现了两个接口：
  * - WebviewViewProvider：VS Code 要求的接口，用于创建侧边栏
  * - Disposable：资源清理接口，扩展卸载时调用
  */
 export declare class SidebarProvider implements WebviewViewProvider, Disposable {
     private readonly extensionUri;
     /**
-     * 当前的 Webview 实例
-     *
-     * 【为什么是 undefined？】
-     * Webview 是按需创建的，用户第一次打开侧边栏时才会创建
-     * 在那之前，这个值是 undefined
+     * 当前的 Webview 实例 - download on demand
      */
     private view;
     /**
      * 当前文件的方法列表（用于反向联动的二分查找）
-     *
-     * 【readonly 数组的含义】
-     * readonly MethodDoc[] 表示数组本身不能被修改（不能 push、pop）
-     * 但可以整体替换（this.currentMethods = newArray）
+     * currentMethods : only replacements is allowed,not modification
      */
     private currentMethods;
     /**
      * 上次高亮的方法 ID
-     *
-     * 【用途】
-     * 如果光标还在同一个方法内移动，就不需要重复发送高亮消息
-     * 这是一个性能优化
+     * used to prevent duplicate highlighting
      */
     private lastHighlightId;
     /**
@@ -53,33 +42,23 @@ export declare class SidebarProvider implements WebviewViewProvider, Disposable 
      */
     private readonly parser;
     /**
-     * 防抖后的高亮函数
-     *
-     * 【为什么需要防抖？】
-     * 用户移动光标时，每移动一个字符都会触发事件
-     * 如果每次都计算并发送消息，会造成：
-     * 1. CPU 浪费
-     * 2. 消息风暴（Webview 来不及处理）
-     *
-     * 防抖后，只有用户停止移动 300ms 才会执行一次
+     * cn - 防抖后的高亮函数
+     * en - debounced highlight function
      */
     private readonly debouncedHighlight;
     /**
      * 构造函数
      *
      * @param extensionUri - 扩展的根目录 URI
-     *
-     * 【为什么需要 extensionUri？】
      * Webview 需要加载 CSS/JS 文件，但出于安全考虑，
      * 它不能随意访问本地文件，只能访问 extensionUri 下的文件
      */
     constructor(extensionUri: vscode.Uri);
     /**
-     * 解析 Webview（VS Code 调用）
+     * 解析 Webview ( called by vscode)
      *
-     * 【何时被调用？】
-     * 用户第一次点击侧边栏图标时，VS Code 会调用这个方法
-     * 让我们有机会配置和初始化 Webview
+     * @implNote 用户第一次点击侧边栏图标时，VS Code 会调用这个方法，
+     *           让我们有机会配置和初始化 Webview
      *
      * @param webviewView - VS Code 创建的 Webview 容器
      * @param _context - 解析上下文（我们不需要）
@@ -101,8 +80,8 @@ export declare class SidebarProvider implements WebviewViewProvider, Disposable 
      */
     clearView(): void;
     /**
-     * 处理光标选择变化（从 extension.ts 调用）
-     *
+     * cn - 处理光标选择变化（从 extension.ts 调用）
+     * en - handle selection change (called from extension.ts)
      * @param line - 光标所在行号
      */
     handleSelectionChange(line: number): void;
@@ -115,14 +94,14 @@ export declare class SidebarProvider implements WebviewViewProvider, Disposable 
      */
     dispose(): void;
     /**
-     * 更新高亮状态
-     *
+     * cn - 更新高亮状态
+     * en - update highlight state
      * @param cursorLine - 光标所在行
      */
     private updateHighlight;
     /**
-     * 处理 Webview 发来的消息
-     *
+     * cn - 处理 Webview 发来的消息
+     * en - handle messages from Webview
      * @param message - 原始消息（类型未知）
      */
     private handleUpstreamMessage;

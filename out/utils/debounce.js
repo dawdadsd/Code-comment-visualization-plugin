@@ -32,22 +32,15 @@ exports.debounce = debounce;
  * // 300ms 后，只打印 'c'
  */
 function debounce(fn, delay) {
-    // 保存定时器 ID，用于取消上一次的延迟执行
-    // ReturnType<typeof setTimeout> 是 NodeJS.Timeout 或 number
-    // 这样写比直接写 number 更准确，因为浏览器和 Node 的返回类型不同
     let timeoutId = null;
-    // 返回一个新函数，这个函数会被实际调用
+    // return a new function that wraps the original function with ed
     return (...args) => {
-        // 如果已经有一个等待中的定时器，取消它
-        // 这就是"防抖"的核心：每次调用都重置计时
         if (timeoutId !== null) {
             clearTimeout(timeoutId);
         }
-        // 设置新的定时器
+        // set a new timeout to call the function after the delay
         timeoutId = setTimeout(() => {
-            // 延迟时间到了，执行原函数
             fn(...args);
-            // 清理：执行完后重置 timeoutId
             timeoutId = null;
         }, delay);
     };

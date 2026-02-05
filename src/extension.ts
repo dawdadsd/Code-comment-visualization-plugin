@@ -1,3 +1,4 @@
+import { JavaDocParser } from "./parser/JavaDocParser";
 /**
  * extension.ts - 扩展入口文件
  *
@@ -17,9 +18,9 @@
  * 不做任何业务逻辑！业务逻辑在 SidebarProvider 中
  */
 
-import * as vscode from 'vscode';
-import type { Disposable } from 'vscode';
-import { SidebarProvider } from './SidebarProvider.js';
+import * as vscode from "vscode";
+import type { Disposable } from "vscode";
+import { SidebarProvider } from "./SidebarProvider.js";
 
 /**
  * 扩展激活函数
@@ -32,60 +33,58 @@ import { SidebarProvider } from './SidebarProvider.js';
  * 3. globalState/workspaceState：持久化存储
  */
 export function activate(context: vscode.ExtensionContext): void {
-  console.log('[JavaDocSidebar] Extension is now active!');
-
-  // ========== 1. 创建 SidebarProvider ==========
-  // 创建两个实例：一个用于左侧边栏，一个用于底部面板
+  console.log("[JavaDocSidebar] Extension is now active!");
+  //register WebViewProvider for sidebar and panel
   const sidebarProvider = new SidebarProvider(context.extensionUri);
   const panelProvider = new SidebarProvider(context.extensionUri);
 
-  // ========== 2. 注册 WebviewViewProvider ==========
-  // 左侧活动栏视图
+  //left bar view create
   const viewProviderDisposable = vscode.window.registerWebviewViewProvider(
-    'javaDocSidebar',
+    "javaDocSidebar",
     sidebarProvider,
     {
       webviewOptions: {
         retainContextWhenHidden: true,
       },
-    }
+    },
   );
 
-  // 底部面板视图
+  // down panel view create
   const panelProviderDisposable = vscode.window.registerWebviewViewProvider(
-    'javaDocSidebarPanel',
+    "JavaDocParserSidebar",
     panelProvider,
     {
       webviewOptions: {
         retainContextWhenHidden: true,
       },
-    }
+    },
   );
 
-  // ========== 3. 注册事件监听器 ==========
-  // 需要同时更新两个视图
+  // this three method is register event listeners
 
-  // 3.1 文件保存时刷新
   const saveListener = createSaveListener(sidebarProvider, panelProvider);
 
-  // 3.2 切换编辑器时刷新
-  const editorChangeListener = createEditorChangeListener(sidebarProvider, panelProvider);
+  const editorChangeListener = createEditorChangeListener(
+    sidebarProvider,
+    panelProvider,
+  );
 
-  // 3.3 光标移动时高亮（反向联动）
-  const selectionListener = createSelectionListener(sidebarProvider, panelProvider);
+  const selectionListener = createSelectionListener(
+    sidebarProvider,
+    panelProvider,
+  );
 
-  // ========== 4. 注册命令 ==========
+  // register command for refresh future
 
-  // 手动刷新命令
   const refreshCommand = vscode.commands.registerCommand(
-    'javaDocSidebar.refresh',
+    "javaDocSidebar.refresh",
     () => {
       void sidebarProvider.refresh();
       void panelProvider.refresh();
-    }
+    },
   );
 
-  // ========== 5. 注册到 subscriptions ==========
+  // register for subscriptions to auto dispose
   context.subscriptions.push(
     viewProviderDisposable,
     panelProviderDisposable,
@@ -94,16 +93,20 @@ export function activate(context: vscode.ExtensionContext): void {
     selectionListener,
     refreshCommand,
     sidebarProvider,
-    panelProvider
+    panelProvider,
   );
 }
 
 /**
- * 创建文件保存监听器
+ * create save event listener
  */
-function createSaveListener(provider: SidebarProvider, panelProvider: SidebarProvider): Disposable {
+function createSaveListener(
+  provider: SidebarProvider,
+  panelProvider: SidebarProvider,
+): Disposable {
   return vscode.workspace.onDidSaveTextDocument((document) => {
-    if (document.languageId === 'java') {
+    //TODO : More languages ​​will be supported in the future
+    if (document.languageId === "java") {
       void provider.refresh(document);
       void panelProvider.refresh(document);
     }
@@ -111,11 +114,15 @@ function createSaveListener(provider: SidebarProvider, panelProvider: SidebarPro
 }
 
 /**
- * 创建编辑器切换监听器
+ * cn -创建编辑器切换监听器
+ * en - create editor change listener
  */
-function createEditorChangeListener(provider: SidebarProvider, panelProvider: SidebarProvider): Disposable {
+function createEditorChangeListener(
+  provider: SidebarProvider,
+  panelProvider: SidebarProvider,
+): Disposable {
   return vscode.window.onDidChangeActiveTextEditor((editor) => {
-    if (editor?.document.languageId === 'java') {
+    if (editor?.document.languageId === "java") {
       void provider.refresh(editor.document);
       void panelProvider.refresh(editor.document);
     } else {
@@ -126,11 +133,16 @@ function createEditorChangeListener(provider: SidebarProvider, panelProvider: Si
 }
 
 /**
- * 创建光标选择监听器（反向联动）
+ * cn - 创建光标选择监听器（反向联动）
+ * en - create selection listener (reverse linkage)
+ *
  */
-function createSelectionListener(provider: SidebarProvider, panelProvider: SidebarProvider): Disposable {
+function createSelectionListener(
+  provider: SidebarProvider,
+  panelProvider: SidebarProvider,
+): Disposable {
   return vscode.window.onDidChangeTextEditorSelection((event) => {
-    if (event.textEditor.document.languageId === 'java') {
+    if (event.textEditor.document.languageId === "java") {
       const line = event.selections[0]?.active.line ?? 0;
       provider.handleSelectionChange(line);
       panelProvider.handleSelectionChange(line);
@@ -154,5 +166,5 @@ function createSelectionListener(provider: SidebarProvider, panelProvider: Sideb
  * 保留空函数是为了明确表示"我们知道有这个生命周期"
  */
 export function deactivate(): void {
-  console.log('[JavaDocSidebar] Extension is now deactivated.');
+  console.log("[JavaDocSidebar] Extension is now deactivated.");
 }

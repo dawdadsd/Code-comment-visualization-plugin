@@ -12,6 +12,8 @@
  * 【WebviewViewProvider 是什么？】
  * VS Code 提供的接口，用于创建侧边栏中的 Webview
  * 实现这个接口，VS Code 就知道如何显示你的侧边栏
+ * @author : xiaowu
+ * @since : 2026/02/04
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -55,37 +57,23 @@ const binarySearch_js_1 = require("./utils/binarySearch.js");
 const types_js_1 = require("./types.js");
 /**
  * Webview 侧边栏 Provider
- *
- * 【implements 关键字】
- * 表示这个类实现了两个接口：
  * - WebviewViewProvider：VS Code 要求的接口，用于创建侧边栏
  * - Disposable：资源清理接口，扩展卸载时调用
  */
 class SidebarProvider {
     extensionUri;
-    // ========== 私有状态 ==========
     /**
-     * 当前的 Webview 实例
-     *
-     * 【为什么是 undefined？】
-     * Webview 是按需创建的，用户第一次打开侧边栏时才会创建
-     * 在那之前，这个值是 undefined
+     * 当前的 Webview 实例 - download on demand
      */
     view;
     /**
      * 当前文件的方法列表（用于反向联动的二分查找）
-     *
-     * 【readonly 数组的含义】
-     * readonly MethodDoc[] 表示数组本身不能被修改（不能 push、pop）
-     * 但可以整体替换（this.currentMethods = newArray）
+     * currentMethods : only replacements is allowed,not modification
      */
     currentMethods = [];
     /**
      * 上次高亮的方法 ID
-     *
-     * 【用途】
-     * 如果光标还在同一个方法内移动，就不需要重复发送高亮消息
-     * 这是一个性能优化
+     * used to prevent duplicate highlighting
      */
     lastHighlightId = null;
     /**
@@ -93,59 +81,40 @@ class SidebarProvider {
      */
     parser;
     /**
-     * 防抖后的高亮函数
-     *
-     * 【为什么需要防抖？】
-     * 用户移动光标时，每移动一个字符都会触发事件
-     * 如果每次都计算并发送消息，会造成：
-     * 1. CPU 浪费
-     * 2. 消息风暴（Webview 来不及处理）
-     *
-     * 防抖后，只有用户停止移动 300ms 才会执行一次
+     * cn - 防抖后的高亮函数
+     * en - debounced highlight function
      */
     debouncedHighlight;
     /**
      * 构造函数
      *
      * @param extensionUri - 扩展的根目录 URI
-     *
-     * 【为什么需要 extensionUri？】
      * Webview 需要加载 CSS/JS 文件，但出于安全考虑，
      * 它不能随意访问本地文件，只能访问 extensionUri 下的文件
      */
     constructor(extensionUri) {
         this.extensionUri = extensionUri;
         this.parser = new JavaDocParser_js_1.JavaDocParser();
-        // 创建防抖后的高亮函数
         this.debouncedHighlight = (0, debounce_js_1.debounce)((line) => {
             this.updateHighlight((0, types_js_1.LineNumber)(line));
-        }, 300 // 300ms 防抖延迟
-        );
+        }, 300);
     }
-    // ========== WebviewViewProvider 接口实现 ==========
     /**
-     * 解析 Webview（VS Code 调用）
+     * 解析 Webview ( called by vscode)
      *
-     * 【何时被调用？】
-     * 用户第一次点击侧边栏图标时，VS Code 会调用这个方法
-     * 让我们有机会配置和初始化 Webview
+     * @implNote 用户第一次点击侧边栏图标时，VS Code 会调用这个方法，
+     *           让我们有机会配置和初始化 Webview
      *
      * @param webviewView - VS Code 创建的 Webview 容器
      * @param _context - 解析上下文（我们不需要）
      * @param _token - 取消令牌（我们不需要）
      */
     resolveWebviewView(webviewView, _context, _token) {
-        // 保存引用，后续需要用它来发送消息
         this.view = webviewView;
-        // 配置 Webview 选项
         webviewView.webview.options = {
-            // 允许执行 JavaScript（默认禁止）
             enableScripts: true,
-            // 限制 Webview 只能访问 media 目录下的文件
-            // 这是安全措施，防止 Webview 访问用户的其他文件
-            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'media')],
+            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
         };
-        // 设置 HTML 内容
         webviewView.webview.html = this.getHtmlContent(webviewView.webview);
         // 监听 Webview 发来的消息（上行消息）
         webviewView.webview.onDidReceiveMessage((message) => {
@@ -153,7 +122,7 @@ class SidebarProvider {
         });
         // 如果当前已经打开了 Java 文件，立即解析并显示
         const activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor?.document.languageId === 'java') {
+        if (activeEditor?.document.languageId === "java") {
             void this.refresh(activeEditor.document);
         }
     }
@@ -171,7 +140,7 @@ class SidebarProvider {
         // 如果没传文档，使用当前活动的文档
         const doc = document ?? vscode.window.activeTextEditor?.document;
         // 检查是否是 Java 文件
-        if (!doc || doc.languageId !== 'java') {
+        if (!doc || doc.languageId !== "java") {
             this.clearView();
             return;
         }
@@ -182,10 +151,10 @@ class SidebarProvider {
             this.currentMethods = classDoc.methods;
             this.lastHighlightId = null; // 重置高亮状态
             // 发送数据给 Webview
-            this.postMessage({ type: 'updateView', payload: classDoc });
+            this.postMessage({ type: "updateView", payload: classDoc });
         }
         catch (error) {
-            console.error('[JavaDocSidebar] Parse error:', error);
+            console.error("[JavaDocSidebar] Parse error:", error);
             // 解析失败时保持当前视图不变
         }
     }
@@ -195,15 +164,14 @@ class SidebarProvider {
     clearView() {
         this.currentMethods = [];
         this.lastHighlightId = null;
-        this.postMessage({ type: 'clearView' });
+        this.postMessage({ type: "clearView" });
     }
     /**
-     * 处理光标选择变化（从 extension.ts 调用）
-     *
+     * cn - 处理光标选择变化（从 extension.ts 调用）
+     * en - handle selection change (called from extension.ts)
      * @param line - 光标所在行号
      */
     handleSelectionChange(line) {
-        // 使用防抖函数，避免频繁计算
         this.debouncedHighlight(line);
     }
     /**
@@ -217,37 +185,31 @@ class SidebarProvider {
         // 目前没有需要清理的资源
         // 但保留这个方法，方便将来扩展
     }
-    // ========== 私有方法 ==========
     /**
-     * 更新高亮状态
-     *
+     * cn - 更新高亮状态
+     * en - update highlight state
      * @param cursorLine - 光标所在行
      */
     updateHighlight(cursorLine) {
-        // 二分查找光标所在的方法
         const method = (0, binarySearch_js_1.binarySearchMethod)(this.currentMethods, cursorLine);
         const newId = method?.id ?? null;
-        // 如果和上次一样，不需要发消息
-        // 这个检查很重要！避免在同一个方法内移动光标时重复发消息
         if (newId === this.lastHighlightId) {
             return;
         }
-        // 更新状态
         this.lastHighlightId = newId;
-        // 发送高亮消息
         if (newId) {
-            this.postMessage({ type: 'highlightMethod', payload: { id: newId } });
+            this.postMessage({ type: "highlightMethod", payload: { id: newId } });
         }
     }
     /**
-     * 处理 Webview 发来的消息
-     *
+     * cn - 处理 Webview 发来的消息
+     * en - handle messages from Webview
      * @param message - 原始消息（类型未知）
      */
     handleUpstreamMessage(message) {
         // 先用类型守卫验证消息格式
         if (!(0, types_js_1.isUpstreamMessage)(message)) {
-            console.warn('[JavaDocSidebar] Invalid upstream message:', message);
+            console.warn("[JavaDocSidebar] Invalid upstream message:", message);
             return;
         }
         // 根据消息类型分发处理
@@ -255,10 +217,10 @@ class SidebarProvider {
         // TypeScript 知道进入 case 'jumpToLine' 后，
         // message 的类型是 { type: 'jumpToLine', payload: { line: LineNumber } }
         switch (message.type) {
-            case 'jumpToLine':
+            case "jumpToLine":
                 this.jumpToLine(message.payload.line);
                 break;
-            case 'webviewReady':
+            case "webviewReady":
                 // Webview 加载完成，触发一次刷新
                 void this.refresh();
                 break;
@@ -305,8 +267,8 @@ class SidebarProvider {
      */
     getHtmlContent(webview) {
         // 将本地文件路径转换为 Webview 可访问的 URI
-        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'sidebar.css'));
-        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, 'media', 'sidebar.js'));
+        const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "sidebar.css"));
+        const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "sidebar.js"));
         // 生成随机 nonce（用于 CSP）
         const nonce = this.getNonce();
         // 返回 HTML
@@ -342,7 +304,7 @@ class SidebarProvider {
     getNonce() {
         const array = new Uint32Array(4);
         crypto.getRandomValues(array);
-        return Array.from(array, (n) => n.toString(36)).join('');
+        return Array.from(array, (n) => n.toString(36)).join("");
     }
 }
 exports.SidebarProvider = SidebarProvider;

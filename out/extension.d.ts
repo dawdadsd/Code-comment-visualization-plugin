@@ -16,7 +16,7 @@
  *
  * 不做任何业务逻辑！业务逻辑在 SidebarProvider 中
  */
-import * as vscode from 'vscode';
+import * as vscode from "vscode";
 /**
  * 扩展激活函数
  *

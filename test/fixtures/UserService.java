@@ -1,5 +1,8 @@
 package com.example.service;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 用户服务类，提供用户相关的核心业务操作。
  *
@@ -25,11 +28,11 @@ public class UserService {
     /**
      * 保存用户信息。
      *
-     * @param user 要保存的用户对象
+     * @param user  要保存的用户对象
      * @param force 是否强制覆盖已存在的用户
      * @return 保存后的用户对象（包含生成的ID）
      * @throws IllegalArgumentException 当 user 为 null 时抛出
-     * @throws DuplicateUserException 当用户已存在且 force 为 false 时抛出
+     * @throws DuplicateUserException   当用户已存在且 force 为 false 时抛出
      * @since 1.1
      */
     public User save(User user, boolean force) {
@@ -73,7 +76,7 @@ public class UserService {
         /**
          * 将用户对象转换为 DTO。
          *
-         * @param user 源用户对象
+         * @param user           源用户对象
          * @param includeDetails 是否包含详细信息
          * @return 转换后的 DTO 对象
          */

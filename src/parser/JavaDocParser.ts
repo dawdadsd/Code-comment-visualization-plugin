@@ -12,19 +12,23 @@
  * TextDocument → Symbol树 → 扁平化方法列表 → 提取每个方法的Javadoc → ClassDoc
  */
 
-import * as vscode from 'vscode';
-import type { TextDocument, DocumentSymbol } from 'vscode';
-import { resolveSymbols, isClassLikeSymbol, isMethodSymbol } from './SymbolResolver.js';
-import { parseTagTable } from './TagParser.js';
-import { gitService } from '../services/GitService.js';
+import * as vscode from "vscode";
+import type { TextDocument, DocumentSymbol } from "vscode";
+import {
+  resolveSymbols,
+  isClassLikeSymbol,
+  isMethodSymbol,
+} from "./SymbolResolver.js";
+import { parseTagTable } from "./TagParser.js";
+import { gitService } from "../services/GitService.js";
 import type {
   ClassDoc,
   MethodDoc,
   TagTable,
   AccessModifier,
   GitAuthorInfo,
-} from '../types.js';
-import { MethodId, LineNumber, FilePath, EMPTY_TAG_TABLE } from '../types.js';
+} from "../types.js";
+import { MethodId, LineNumber, FilePath, EMPTY_TAG_TABLE } from "../types.js";
 
 /**
  * 扁平化后的符号信息
@@ -34,7 +38,7 @@ import { MethodId, LineNumber, FilePath, EMPTY_TAG_TABLE } from '../types.js';
  */
 interface FlattenedSymbol {
   readonly symbol: DocumentSymbol;
-  readonly belongsTo: string;  // 所属类名，如 "OuterClass.InnerClass"
+  readonly belongsTo: string; // 所属类名，如 "OuterClass.InnerClass"
 }
 
 /**
@@ -68,19 +72,19 @@ export class JavaDocParser {
     // 提取类注释
     const classComment = classSymbol
       ? this.extractComment(text, classSymbol.range.start.line)
-      : '';
+      : "";
 
     // 解析类注释中的 @author 和 @since
     const classJavadoc = this.parseClassJavadoc(classComment);
 
     // 步骤 3：扁平化 Symbol 树，提取所有方法
-    const flattenedSymbols = this.flattenSymbols(symbols, '');
+    const flattenedSymbols = this.flattenSymbols(symbols, "");
 
     // 步骤 4：解析每个方法的 Javadoc
     const methods = flattenedSymbols
       .filter((fs) => isMethodSymbol(fs.symbol))
       .map((fs) => this.parseMethod(text, fs))
-      .filter((m): m is MethodDoc => m !== null)  // 过滤掉解析失败的
+      .filter((m): m is MethodDoc => m !== null) // 过滤掉解析失败的
       .sort((a, b) => a.startLine - b.startLine); // 按行号排序
 
     // 步骤 5：获取 Git 信息（异步，不阻塞）
@@ -101,7 +105,10 @@ export class JavaDocParser {
   /**
    * 获取 Git 作者信息
    */
-  private async getGitInfo(filePath: string, classLine: number): Promise<GitAuthorInfo | undefined> {
+  private async getGitInfo(
+    filePath: string,
+    classLine: number,
+  ): Promise<GitAuthorInfo | undefined> {
     try {
       const isGitRepo = await gitService.isGitRepository(filePath);
       if (!isGitRepo) return undefined;
@@ -122,7 +129,10 @@ export class JavaDocParser {
   /**
    * 解析类注释中的 @author 和 @since
    */
-  private parseClassJavadoc(comment: string): { author: string | undefined; since: string | undefined } {
+  private parseClassJavadoc(comment: string): {
+    author: string | undefined;
+    since: string | undefined;
+  } {
     const authorMatch = /@author\s+(.+?)(?:\n|$)/.exec(comment);
     const sinceMatch = /@since\s+(.+?)(?:\n|$)/.exec(comment);
 
@@ -145,7 +155,7 @@ export class JavaDocParser {
    */
   private flattenSymbols(
     symbols: readonly DocumentSymbol[],
-    parentName: string
+    parentName: string,
   ): readonly FlattenedSymbol[] {
     const result: FlattenedSymbol[] = [];
 
@@ -164,7 +174,7 @@ export class JavaDocParser {
         // 收集方法
         result.push({
           symbol,
-          belongsTo: parentName || 'Unknown',
+          belongsTo: parentName || "Unknown",
         });
       }
       // 忽略其他类型（字段、枚举常量等）
@@ -180,13 +190,18 @@ export class JavaDocParser {
    * @param flattened - 扁平化后的方法符号
    * @returns 方法文档，解析失败返回 null
    */
-  private parseMethod(text: string, flattened: FlattenedSymbol): MethodDoc | null {
+  private parseMethod(
+    text: string,
+    flattened: FlattenedSymbol,
+  ): MethodDoc | null {
     try {
       const { symbol, belongsTo } = flattened;
-      const lines = text.split('\n');
+      const lines = text.split("\n");
 
       // 使用 selectionRange 获取方法名所在行（更准确）
-      const startLine = LineNumber(symbol.selectionRange?.start.line ?? symbol.range.start.line);
+      const startLine = LineNumber(
+        symbol.selectionRange?.start.line ?? symbol.range.start.line,
+      );
       const endLine = LineNumber(symbol.range.end.line);
 
       // 获取完整的方法签名（可能跨多行）
@@ -199,7 +214,7 @@ export class JavaDocParser {
       // 使用源代码中的完整签名来解析参数类型（而不是 symbol.detail）
       const { description, tags } = hasComment
         ? this.parseJavadoc(rawComment, fullSignature)
-        : { description: '', tags: EMPTY_TAG_TABLE };
+        : { description: "", tags: EMPTY_TAG_TABLE };
 
       // 提取访问修饰符
       const accessModifier = this.extractAccessModifierFromLine(fullSignature);
@@ -208,7 +223,8 @@ export class JavaDocParser {
       const id = MethodId(`${symbol.name}_${startLine}`);
 
       // 显示用的签名使用 symbol.detail（更简洁）或提取的签名
-      const displaySignature = symbol.detail || this.extractSignatureFromLine(lines[startLine] ?? '');
+      const displaySignature =
+        symbol.detail || this.extractSignatureFromLine(lines[startLine] ?? "");
 
       return {
         id,
@@ -223,7 +239,10 @@ export class JavaDocParser {
         accessModifier,
       };
     } catch (error) {
-      console.error(`[JavaDocParser] Failed to parse method: ${flattened.symbol.name}`, error);
+      console.error(
+        `[JavaDocParser] Failed to parse method: ${flattened.symbol.name}`,
+        error,
+      );
       return null;
     }
   }
@@ -233,32 +252,32 @@ export class JavaDocParser {
    * 返回从方法名到右括号的完整签名，去除换行符
    */
   private extractFullSignature(lines: string[], startLine: number): string {
-    let signature = '';
+    let signature = "";
     let lineIndex = startLine;
     let parenDepth = 0;
     let foundOpenParen = false;
 
     // 从方法声明行开始，收集到右括号为止
     while (lineIndex < lines.length) {
-      const line = lines[lineIndex] ?? '';
+      const line = lines[lineIndex] ?? "";
 
       for (const char of line) {
         signature += char;
 
-        if (char === '(') {
+        if (char === "(") {
           foundOpenParen = true;
           parenDepth++;
-        } else if (char === ')') {
+        } else if (char === ")") {
           parenDepth--;
           if (foundOpenParen && parenDepth === 0) {
             // 找到完整的方法签名，规范化空白字符
-            return signature.replace(/\s+/g, ' ').trim();
+            return signature.replace(/\s+/g, " ").trim();
           }
         }
       }
 
       // 添加空格替代换行
-      signature += ' ';
+      signature += " ";
       lineIndex++;
 
       // 最多查找5行，防止无限循环
@@ -266,7 +285,7 @@ export class JavaDocParser {
     }
 
     // 如果没找到完整括号，返回规范化后的内容
-    return signature.replace(/\s+/g, ' ').trim();
+    return signature.replace(/\s+/g, " ").trim();
   }
 
   /**
@@ -281,43 +300,43 @@ export class JavaDocParser {
    * @param targetLine - 目标行号（方法/类定义所在行）
    */
   private extractComment(text: string, targetLine: number): string {
-    const lines = text.split('\n');
+    const lines = text.split("\n");
     let searchLine = targetLine - 1;
 
     // 向上跳过空行和注解
     while (searchLine >= 0) {
-      const line = lines[searchLine]?.trim() ?? '';
+      const line = lines[searchLine]?.trim() ?? "";
 
       // 空行或注解：继续向上
-      if (line === '' || this.annotationPattern.test(line)) {
+      if (line === "" || this.annotationPattern.test(line)) {
         searchLine--;
         continue;
       }
 
       // 找到注释结束标记
-      if (line.endsWith('*/')) {
+      if (line.endsWith("*/")) {
         break;
       }
 
       // 遇到其他内容（代码），说明没有 Javadoc
-      return '';
+      return "";
     }
 
-    if (searchLine < 0) return '';
+    if (searchLine < 0) return "";
 
     // 从 */ 向上查找 /**
     const endLine = searchLine;
     while (searchLine >= 0) {
-      const line = lines[searchLine] ?? '';
-      if (line.includes('/**')) {
+      const line = lines[searchLine] ?? "";
+      if (line.includes("/**")) {
         // 找到了，提取这段注释
         const commentLines = lines.slice(searchLine, endLine + 1);
-        return commentLines.join('\n');
+        return commentLines.join("\n");
       }
       searchLine--;
     }
 
-    return '';
+    return "";
   }
 
   /**
@@ -328,7 +347,7 @@ export class JavaDocParser {
    */
   private parseJavadoc(
     rawComment: string,
-    signature: string
+    signature: string,
   ): { description: string; tags: TagTable } {
     // 清理注释格式
     const cleaned = this.cleanComment(rawComment);
@@ -337,13 +356,10 @@ export class JavaDocParser {
     const tagIndex = cleaned.search(/@\w+/);
 
     // 分离描述和标签
-    const description = tagIndex === -1
-      ? cleaned
-      : cleaned.slice(0, tagIndex).trim();
+    const description =
+      tagIndex === -1 ? cleaned : cleaned.slice(0, tagIndex).trim();
 
-    const rawTags = tagIndex === -1
-      ? ''
-      : cleaned.slice(tagIndex);
+    const rawTags = tagIndex === -1 ? "" : cleaned.slice(tagIndex);
 
     // 解析标签
     const tags = parseTagTable(rawTags, signature);
@@ -358,10 +374,10 @@ export class JavaDocParser {
    */
   private cleanComment(raw: string): string {
     return raw
-      .replace(/\/\*\*|\*\//g, '')  // 移除 /** 和 */
-      .split('\n')
-      .map((line) => line.replace(/^\s*\*\s?/, ''))  // 移除每行开头的 " * "
-      .join('\n')
+      .replace(/\/\*\*|\*\//g, "") // 移除 /** 和 */
+      .split("\n")
+      .map((line) => line.replace(/^\s*\*\s?/, "")) // 移除每行开头的 " * "
+      .join("\n")
       .trim();
   }
 
@@ -369,20 +385,20 @@ export class JavaDocParser {
    * 提取访问修饰符
    */
   private extractAccessModifier(detail: string): AccessModifier {
-    if (detail.startsWith('public')) return 'public';
-    if (detail.startsWith('protected')) return 'protected';
-    if (detail.startsWith('private')) return 'private';
-    return 'default';  // 包级私有
+    if (detail.startsWith("public")) return "public";
+    if (detail.startsWith("protected")) return "protected";
+    if (detail.startsWith("private")) return "private";
+    return "default"; // 包级私有
   }
 
   /**
    * 从代码行中提取访问修饰符（更可靠）
    */
   private extractAccessModifierFromLine(line: string): AccessModifier {
-    if (line.includes('public ')) return 'public';
-    if (line.includes('protected ')) return 'protected';
-    if (line.includes('private ')) return 'private';
-    return 'default';
+    if (line.includes("public ")) return "public";
+    if (line.includes("protected ")) return "protected";
+    if (line.includes("private ")) return "private";
+    return "default";
   }
 
   /**
@@ -390,14 +406,16 @@ export class JavaDocParser {
    */
   private extractSignatureFromLine(line: string): string {
     // 移除方法体部分（如果在同一行）
-    const withoutBody = line.replace(/\{.*$/, '').trim();
+    const withoutBody = line.replace(/\{.*$/, "").trim();
     return withoutBody || line;
   }
 
   /**
    * 从 Symbol 列表中找到类符号
    */
-  private findClassSymbol(symbols: readonly DocumentSymbol[]): DocumentSymbol | undefined {
+  private findClassSymbol(
+    symbols: readonly DocumentSymbol[],
+  ): DocumentSymbol | undefined {
     return symbols.find((s) => isClassLikeSymbol(s));
   }
 
@@ -406,7 +424,7 @@ export class JavaDocParser {
    */
   private extractClassNameFromText(text: string): string {
     const match = /(?:class|interface|enum)\s+(\w+)/.exec(text);
-    return match?.[1] ?? 'Unknown';
+    return match?.[1] ?? "Unknown";
   }
 
   /**
@@ -414,6 +432,6 @@ export class JavaDocParser {
    */
   private extractPackageName(text: string): string {
     const match = /package\s+([\w.]+);/.exec(text);
-    return match?.[1] ?? '';
+    return match?.[1] ?? "";
   }
 }

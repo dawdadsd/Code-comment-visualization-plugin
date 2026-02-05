@@ -13,7 +13,12 @@ const MethodId = (id) => id;
 exports.MethodId = MethodId;
 const FilePath = (path) => path;
 exports.FilePath = FilePath;
-exports.ACCESS_MODIFIERS = ['public', 'protected', 'private', 'default'];
+exports.ACCESS_MODIFIERS = [
+    "public",
+    "protected",
+    "private",
+    "default",
+];
 /**
  * nul tag tables : method no javadoc use this
  */
@@ -29,30 +34,24 @@ exports.EMPTY_TAG_TABLE = {
 /**
  * 类型守卫 - 运行时检查消息是否合法
  *
- * 【为什么需要类型守卫？】
- * postMessage 传来的数据是 unknown 类型（可能是任何东西）
- * 我们需要在运行时验证它确实是 UpstreamMessage
- *
- * 【is 关键字的作用】
- * 告诉 TypeScript：如果这个函数返回 true，
- * 那么参数 value 的类型就是 UpstreamMessage
+ *@implNote : 为什么我们需要 类型守卫？
+              postMessage 传来的数据是 unknown 类型（可能是任何东西）
+ *            我们需要在运行时验证它确实是 UpstreamMessage
+              is -> tell TypeScript if true ,value is UpstreamMessage
  */
 function isUpstreamMessage(value) {
-    // 首先检查是否是对象
-    if (typeof value !== 'object' || value === null) {
+    if (typeof value !== "object" || value === null) {
         return false;
     }
-    // 类型断言：告诉 TypeScript 我们要把它当作 Record 来访问
+    // tell TypeScript value is Record<string,unknown>
     const msg = value;
-    // 检查 type 属性，根据不同类型做不同验证
-    switch (msg['type']) {
-        case 'jumpToLine':
+    switch (msg["type"]) {
+        case "jumpToLine":
             // jumpToLine 需要有 payload.line 且是数字
-            return (typeof msg['payload'] === 'object' &&
-                msg['payload'] !== null &&
-                typeof msg['payload']['line'] === 'number');
-        case 'webviewReady':
-            // webviewReady 不需要 payload
+            return (typeof msg["payload"] === "object" &&
+                msg["payload"] !== null &&
+                typeof msg["payload"]["line"] === "number");
+        case "webviewReady":
             return true;
         default:
             return false;
