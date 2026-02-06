@@ -21,7 +21,7 @@ import { JavaDocParser } from "./parser/JavaDocParser";
 import * as vscode from "vscode";
 import type { Disposable } from "vscode";
 import { SidebarProvider } from "./SidebarProvider.js";
-
+import { clearAllSymbolCache, clearSymbolCache } from "./parser/SymbolResolver.js";
 /**
  * 扩展激活函数
  *
@@ -73,6 +73,8 @@ export function activate(context: vscode.ExtensionContext): void {
     sidebarProvider,
     panelProvider,
   );
+
+  const closeListener = createCloseListene();
 
   // register command for refresh future
 
@@ -150,6 +152,12 @@ function createSelectionListener(
   });
 }
 
+function createCloseListene(): Disposable {
+  return vscode.workspace.onDidCloseTextDocument((document) => {
+    clearSymbolCache(document.uri);
+  })
+}
+
 /**
  * 扩展停用函数
  *
@@ -166,5 +174,5 @@ function createSelectionListener(
  * 保留空函数是为了明确表示"我们知道有这个生命周期"
  */
 export function deactivate(): void {
-  console.log("[JavaDocSidebar] Extension is now deactivated.");
+  clearAllSymbolCache();
 }
