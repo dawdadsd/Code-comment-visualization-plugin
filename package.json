@@ -2,7 +2,7 @@
   "name": "javadoc-sidebar",
   "displayName": "JavaDoc Sidebar",
   "description": "在侧边栏实时展示 Java 文件的 Javadoc 文档，支持双向联动导航",
-  "version": "0.3.0",
+  "version": "0.6.0",
   "publisher": "your-name",
   "license": "MIT",
   "engines": {

@@ -10,7 +10,14 @@
  * 5. 获取 Git 作者信息
  *
  * 【解析流程】
- * TextDocument → Symbol树 → 扁平化方法列表 → 提取每个方法的Javadoc → ClassDoc
+ * TextDocument → Symbol树 → 扁平化符号列表 → 按类别分别解析 → ClassDoc
+ *
+ * 【符号分类】
+ * Symbol 树中的符号被分为四类：
+ *   Container（类/接口/枚举）→ 递归展开子符号
+ *   Method / Constructor     → parseMethod（通过 kind 字段区分）
+ *   Field / Constant         → parseField
+ *   EnumMember               → parseEnumConstant（独立解析路径）
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -52,8 +59,9 @@ const SymbolResolver_js_1 = require("./SymbolResolver.js");
 const TagParser_js_1 = require("./TagParser.js");
 const GitService_js_1 = require("../services/GitService.js");
 const types_js_1 = require("../types.js");
+// ========== 解析器 ==========
 /**
- * Javadoc 解析器类
+ * Javadoc 解析器
  */
 class JavaDocParser {
     // 匹配 Javadoc 注释块 /** ... */
@@ -69,7 +77,6 @@ class JavaDocParser {
      * @returns 解析后的类文档结构
      */
     async parse(document) {
-        // 步骤 1：获取 Symbol 树
         const symbols = await (0, SymbolResolver_js_1.resolveSymbols)(document.uri);
         const text = document.getText();
         const filePath = document.uri.fsPath;
@@ -90,23 +97,29 @@ class JavaDocParser {
         const classComment = (classSymbol ? this.extractComment(text, classLine) : "") ||
             fallbackClassInfo?.classComment ||
             "";
-        // 解析类注释中的 @author 和 @since
-        const classJavadoc = this.parseClassJavadoc(classComment);
-        // 步骤 3：扁平化 Symbol 树，提取所有方法
+        const { author: javadocAuthor, since: javadocSince } = this.parseClassJavadoc(classComment);
+        // ---- 扁平化 Symbol 树 ----
         const flattenedSymbols = this.flattenSymbols(symbols, "");
-        // 步骤 4：解析每个方法的 Javadoc
+        // ---- 按类别分别解析 ----
+        // 传入 classComment 用于排除 Lombok 等工具生成的符号误关联类注释的情况
+        // 例如 @Slf4j 生成的 log 字段，Language Server 将其位置报告在类声明附近，
+        // extractComment 向上搜索会错误地找到类 Javadoc
         const methods = flattenedSymbols
             .filter((fs) => (0, SymbolResolver_js_1.isMethodSymbol)(fs.symbol))
-            .map((fs) => this.parseMethod(text, fs))
-            .filter((m) => m !== null) // 过滤掉解析失败的
-            .sort((a, b) => a.startLine - b.startLine); // 按行号排序
-        // 步骤 4.5：解析每个字段的 Javadoc
+            .map((fs) => this.parseMethod(text, fs, classComment))
+            .filter((m) => m !== null)
+            .sort((a, b) => a.startLine - b.startLine);
         const fields = flattenedSymbols
             .filter((fs) => (0, SymbolResolver_js_1.isFieldSymbol)(fs.symbol))
-            .map((fs) => this.parseField(text, fs))
+            .map((fs) => this.parseField(text, fs, classComment))
             .filter((f) => f !== null)
             .sort((a, b) => a.startLine - b.startLine);
-        // 步骤 5：获取 Git 信息（异步，不阻塞）
+        const enumConstants = flattenedSymbols
+            .filter((fs) => (0, SymbolResolver_js_1.isEnumMemberSymbol)(fs.symbol))
+            .map((fs) => this.parseEnumConstant(text, fs, classComment))
+            .filter((e) => e !== null)
+            .sort((a, b) => a.startLine - b.startLine);
+        // ---- Git 信息（异步，不阻塞主流程） ----
         const gitInfo = await this.getGitInfo(filePath, classLine);
         return {
             className,
@@ -115,75 +128,33 @@ class JavaDocParser {
             filePath: (0, types_js_1.FilePath)(filePath),
             methods,
             fields,
+            enumConstants,
             gitInfo,
-            javadocAuthor: classJavadoc.author,
-            javadocSince: classJavadoc.since,
+            javadocAuthor,
+            javadocSince,
         };
     }
-    /**
-     * 获取 Git 作者信息
-     */
-    async getGitInfo(filePath, classLine) {
-        try {
-            const isGitRepo = await GitService_js_1.gitService.isGitRepository(filePath);
-            if (!isGitRepo)
-                return undefined;
-            const info = await GitService_js_1.gitService.getClassGitInfo(filePath, classLine);
-            if (!info)
-                return undefined;
-            return {
-                author: info.author,
-                lastModifier: info.lastModifier,
-                lastModifyDate: info.lastModifyDate,
-            };
-        }
-        catch {
-            return undefined;
-        }
-    }
-    /**
-     * 解析类注释中的 @author 和 @since
-     */
-    parseClassJavadoc(comment) {
-        const authorMatch = /@author\s+(.+?)(?:\n|$)/.exec(comment);
-        const sinceMatch = /@since\s+(.+?)(?:\n|$)/.exec(comment);
-        return {
-            author: authorMatch?.[1]?.trim(),
-            since: sinceMatch?.[1]?.trim(),
-        };
-    }
+    // ========== Symbol 树处理 ==========
     /**
      * 递归扁平化 Symbol 树
      *
-     * @param symbols - 当前层级的符号列表
-     * @param parentName - 父类名（用于拼接 belongsTo）
-     *
-     * 【递归逻辑】
-     * 遇到类/接口 → 递归处理其子符号，并记录类名
-     * 遇到方法 → 收集到结果中
-     * 其他（字段等）→ 忽略
+     * 遇到容器（类/接口/枚举）→ 递归处理其子符号，记录完整类名
+     * 遇到方法/字段/枚举常量     → 收集到结果中
      */
     flattenSymbols(symbols, parentName) {
         const result = [];
         for (const symbol of symbols) {
             if ((0, SymbolResolver_js_1.isClassLikeSymbol)(symbol)) {
-                // 构建完整类名：如果有父类，用点号连接
                 const currentClass = parentName
                     ? `${parentName}.${symbol.name}`
                     : symbol.name;
-                // 递归处理内部类的成员
                 if (symbol.children.length > 0) {
                     result.push(...this.flattenSymbols(symbol.children, currentClass));
                 }
             }
-            else if ((0, SymbolResolver_js_1.isMethodSymbol)(symbol)) {
-                // 收集方法
-                result.push({
-                    symbol,
-                    belongsTo: parentName || "Unknown",
-                });
-            }
-            else if ((0, SymbolResolver_js_1.isFieldSymbol)(symbol)) {
+            else if ((0, SymbolResolver_js_1.isMethodSymbol)(symbol) ||
+                (0, SymbolResolver_js_1.isFieldSymbol)(symbol) ||
+                (0, SymbolResolver_js_1.isEnumMemberSymbol)(symbol)) {
                 result.push({
                     symbol,
                     belongsTo: parentName || "Unknown",
@@ -192,37 +163,33 @@ class JavaDocParser {
         }
         return result;
     }
+    // ========== 方法解析 ==========
     /**
-     * 解析单个方法
+     * 解析单个方法（包括构造函数）
      *
-     * @param text - 文件完整文本
-     * @param flattened - 扁平化后的方法符号
-     * @returns 方法文档，解析失败返回 null
+     * 构造函数与普通方法走同一解析路径，
+     * 仅在最终赋值 kind 时通过 isConstructorSymbol 区分
      */
-    parseMethod(text, flattened) {
+    parseMethod(text, flattened, classComment) {
         try {
             const { symbol, belongsTo } = flattened;
             const lines = text.split("\n");
-            // 使用 selectionRange 获取方法名所在行（更准确）
             const startLine = (0, types_js_1.LineNumber)(symbol.selectionRange?.start.line ?? symbol.range.start.line);
             const endLine = (0, types_js_1.LineNumber)(symbol.range.end.line);
-            // 获取完整的方法签名（可能跨多行）
             const fullSignature = this.extractFullSignature(lines, startLine);
-            // 提取方法上方的 Javadoc 注释
-            const rawComment = this.extractComment(text, startLine);
+            const rawComment = this.extractMemberComment(text, startLine, classComment);
             const hasComment = rawComment.length > 0;
-            // 使用源代码中的完整签名来解析参数类型（而不是 symbol.detail）
             const { description, tags } = hasComment
                 ? this.parseJavadoc(rawComment, fullSignature)
                 : { description: "", tags: types_js_1.EMPTY_TAG_TABLE };
-            // 提取访问修饰符
             const accessModifier = this.extractAccessModifierFromLine(fullSignature);
-            // 生成唯一 ID
-            const id = (0, types_js_1.MethodId)(`${symbol.name}_${startLine}`);
-            // 显示用的签名使用 symbol.detail（更简洁）或提取的签名
+            const kind = (0, SymbolResolver_js_1.isConstructorSymbol)(symbol)
+                ? "constructor"
+                : "method";
             const displaySignature = symbol.detail || this.extractSignatureFromLine(lines[startLine] ?? "");
             return {
-                id,
+                id: (0, types_js_1.MethodId)(`${symbol.name}_${startLine}`),
+                kind,
                 name: symbol.name,
                 signature: displaySignature,
                 startLine,
@@ -239,20 +206,17 @@ class JavaDocParser {
             return null;
         }
     }
+    // ========== 字段解析 ==========
     /**
-     * 解析单个字段
-     *
-     * @param text - 文件完整文本
-     * @param flattened - 扁平化后的字段符号
-     * @returns 字段文档，解析失败返回 null
+     * 解析单个字段（普通字段 / static final 常量）
      */
-    parseField(text, flattened) {
+    parseField(text, flattened, classComment) {
         try {
             const { symbol, belongsTo } = flattened;
             const lines = text.split("\n");
             const startLine = (0, types_js_1.LineNumber)(symbol.selectionRange?.start.line ?? symbol.range.start.line);
             const lineText = lines[startLine]?.trim() ?? "";
-            const rawComment = this.extractComment(text, startLine);
+            const rawComment = this.extractMemberComment(text, startLine, classComment);
             const hasComment = rawComment.length > 0;
             const description = hasComment ? this.cleanComment(rawComment) : "";
             const isConstant = lineText.includes("static") && lineText.includes("final");
@@ -275,17 +239,146 @@ class JavaDocParser {
             return null;
         }
     }
+    // ========== 枚举常量解析 ==========
     /**
-     * 提取完整的方法签名（处理跨行情况）
-     * 返回从方法名到右括号的完整签名，去除换行符
+     * 解析单个枚举常量
+     *
+     * 枚举常量的语法与普通字段完全不同：
+     *   SUCCESS(200, "OK"),       ← 有构造参数
+     *   PENDING,                  ← 无构造参数
+     *   UNKNOWN;                  ← 最后一个用分号
+     *
+     * 因此不复用 parseField，而是独立解析
      */
+    parseEnumConstant(text, flattened, classComment) {
+        try {
+            const { symbol, belongsTo } = flattened;
+            const lines = text.split("\n");
+            const startLine = (0, types_js_1.LineNumber)(symbol.selectionRange?.start.line ?? symbol.range.start.line);
+            const lineText = lines[startLine]?.trim() ?? "";
+            const rawComment = this.extractMemberComment(text, startLine, classComment);
+            const hasComment = rawComment.length > 0;
+            const description = hasComment ? this.cleanComment(rawComment) : "";
+            const args = this.extractEnumArguments(lineText);
+            return {
+                name: symbol.name,
+                startLine,
+                hasComment,
+                description,
+                arguments: args,
+                belongsTo,
+            };
+        }
+        catch (error) {
+            console.error(`[JavaDocParser] Failed to parse enum constant: ${flattened.symbol.name}`, error);
+            return null;
+        }
+    }
+    /**
+     * 提取枚举常量的构造参数
+     *
+     * 使用括号深度匹配，正确处理嵌套括号
+     *
+     * @example
+     *   "SUCCESS(200, \"OK\")" → "(200, \"OK\")"
+     *   "PENDING,"             → ""
+     *   "UNKNOWN;"             → ""
+     */
+    extractEnumArguments(lineText) {
+        const openIndex = lineText.indexOf("(");
+        if (openIndex === -1)
+            return "";
+        let depth = 0;
+        for (let i = openIndex; i < lineText.length; i++) {
+            const ch = lineText[i];
+            if (ch === "(")
+                depth++;
+            else if (ch === ")") {
+                depth--;
+                if (depth === 0) {
+                    return lineText.slice(openIndex, i + 1);
+                }
+            }
+        }
+        // 括号未闭合，返回从 ( 到行尾（去掉末尾的逗号/分号）
+        return lineText.slice(openIndex).replace(/[,;]\s*$/, "");
+    }
+    // ========== Javadoc 注释提取与解析 ==========
+    /**
+     * 提取成员的 Javadoc 注释（带类注释去重保护）
+     *
+     * 【为什么需要这个方法？】
+     * Lombok 等注解处理器会生成虚拟符号（如 @Slf4j → log 字段），
+     * Language Server 将这些符号的位置报告在类声明附近。
+     * extractComment 向上搜索时会错误地找到类 Javadoc。
+     *
+     * 此方法在 extractComment 的基础上增加一层校验：
+     * 如果提取到的注释与类注释完全相同，说明是误关联，返回空字符串。
+     */
+    extractMemberComment(text, targetLine, classComment) {
+        const raw = this.extractComment(text, targetLine);
+        if (raw.length === 0)
+            return "";
+        // 如果与类注释相同，说明是 Lombok 生成符号的误关联
+        if (classComment.length > 0 && raw === classComment)
+            return "";
+        return raw;
+    }
+    /**
+     * 解析 Javadoc 注释内容
+     */
+    parseJavadoc(rawComment, signature) {
+        const cleaned = this.cleanComment(rawComment);
+        const tagIndex = cleaned.search(/@\w+/);
+        const description = tagIndex === -1 ? cleaned : cleaned.slice(0, tagIndex).trim();
+        const rawTags = tagIndex === -1 ? "" : cleaned.slice(tagIndex);
+        const tags = (0, TagParser_js_1.parseTagTable)(rawTags, signature);
+        return { description, tags };
+    }
+    /**
+     * 解析类注释中的 @author 和 @since
+     */
+    parseClassJavadoc(comment) {
+        const authorMatch = /@author\s+(.+?)(?:\n|$)/.exec(comment);
+        const sinceMatch = /@since\s+(.+?)(?:\n|$)/.exec(comment);
+        return {
+            author: authorMatch?.[1]?.trim(),
+            since: sinceMatch?.[1]?.trim(),
+        };
+    }
+    /**
+     * 清理 Javadoc 注释格式
+     */
+    cleanComment(raw) {
+        return raw
+            .replace(/\/\*\*|\*\//g, "")
+            .split("\n")
+            .map((line) => line.replace(/^\s*\*\s?/, ""))
+            .join("\n")
+            .trim();
+    }
+    // ========== 签名提取 ==========
+    /**
+     * 提取完整的方法签名（处理跨行声明）
+     *
+     * Spring Controller 方法带多个注解参数时，签名可能跨越 8-10 行，例如：
+     *   public ResponseEntity<User> updateUser(
+     *       @PathVariable Long id,
+     *       @RequestBody @Valid UserUpdateDTO dto,
+     *       @RequestParam(required = false) String reason,
+     *       @AuthenticationPrincipal UserDetails principal
+     *   ) {
+     *
+     * 上限设为 15 行，覆盖绝大多数实际方法签名
+     */
+    static MAX_SIGNATURE_LINES = 15;
     extractFullSignature(lines, startLine) {
         let signature = "";
         let lineIndex = startLine;
         let parenDepth = 0;
         let foundOpenParen = false;
-        // 从方法声明行开始，收集到右括号为止
-        while (lineIndex < lines.length) {
+        const maxLine = Math.min(lines.length, startLine + JavaDocParser.MAX_SIGNATURE_LINES);
+        while (lineIndex < maxLine) {
             const line = lines[lineIndex] ?? "";
             for (const char of line) {
                 signature += char;
@@ -296,31 +389,17 @@ class JavaDocParser {
                 else if (char === ")") {
                     parenDepth--;
                     if (foundOpenParen && parenDepth === 0) {
-                        // 找到完整的方法签名，规范化空白字符
                         return signature.replace(/\s+/g, " ").trim();
                     }
                 }
             }
-            // 添加空格替代换行
             signature += " ";
             lineIndex++;
-            // 最多查找5行，防止无限循环
-            if (lineIndex - startLine > 5)
-                break;
         }
-        // 如果没找到完整括号，返回规范化后的内容
         return signature.replace(/\s+/g, " ").trim();
     }
     /**
-     * 提取方法/类上方的 Javadoc 注释
-     *
-     * 搜索策略：
-     * 从目标行向上搜索，跳过空行和注解
-     * 找到注释结束标记后，继续向上找注释开始标记
-     * 如果遇到代码行（如上一个方法的右花括号），则说明没有注释
-     *
-     * @param text - 文件完整文本
-     * @param targetLine - 目标行号（方法/类定义所在行）
+     * 提取目标行上方最近的 Javadoc 注释块
      */
     extractComment(text, targetLine) {
         const lines = text.split("\n");
@@ -376,52 +455,7 @@ class JavaDocParser {
         }
         return true;
     }
-    /**
-     * 解析 Javadoc 内容
-     *
-     * @param rawComment - 原始注释文本（包含开始和结束标记）
-     * @param signature - 方法签名
-     */
-    parseJavadoc(rawComment, signature) {
-        // 清理注释格式
-        const cleaned = this.cleanComment(rawComment);
-        // 找到第一个 @tag 的位置
-        const tagIndex = cleaned.search(/@\w+/);
-        // 分离描述和标签
-        const description = tagIndex === -1 ? cleaned : cleaned.slice(0, tagIndex).trim();
-        const rawTags = tagIndex === -1 ? "" : cleaned.slice(tagIndex);
-        // 解析标签
-        const tags = (0, TagParser_js_1.parseTagTable)(rawTags, signature);
-        return { description, tags };
-    }
-    /**
-     * 清理 Javadoc 注释格式
-     *
-     * 移除注释的开始结束标记，以及每行开头的星号
-     */
-    cleanComment(raw) {
-        return raw
-            .replace(/\/\*\*|\*\//g, "") // 移除 /** 和 */
-            .split("\n")
-            .map((line) => line.replace(/^\s*\*\s?/, "")) // 移除每行开头的 " * "
-            .join("\n")
-            .trim();
-    }
-    /**
-     * 提取访问修饰符
-     */
-    extractAccessModifier(detail) {
-        if (detail.startsWith("public"))
-            return "public";
-        if (detail.startsWith("protected"))
-            return "protected";
-        if (detail.startsWith("private"))
-            return "private";
-        return "default"; // 包级私有
-    }
-    /**
-     * 从代码行中提取访问修饰符（更可靠）
-     */
+    // ========== 辅助方法 ==========
     extractAccessModifierFromLine(line) {
         if (line.includes("public "))
             return "public";
@@ -580,7 +614,7 @@ class JavaDocParser {
     }
     /**
      * 从字段声明行提取类型
-     * 例如: "private static final int MAX_SIZE = 100;" -> "int"
+     * 例如: "private static final int MAX_SIZE = 100;" → "int"
      */
     extractFieldType(line) {
         const withoutAssign = line.split("=")[0] ?? "";
@@ -591,12 +625,28 @@ class JavaDocParser {
         }
         return "unknown";
     }
-    /**
-     * 提取包名
-     */
     extractPackageName(text) {
         const match = /package\s+([\w.]+);/.exec(text);
         return match?.[1] ?? "";
+    }
+    // ========== Git 集成 ==========
+    async getGitInfo(filePath, classLine) {
+        try {
+            const isGitRepo = await GitService_js_1.gitService.isGitRepository(filePath);
+            if (!isGitRepo)
+                return undefined;
+            const info = await GitService_js_1.gitService.getClassGitInfo(filePath, classLine);
+            if (!info)
+                return undefined;
+            return {
+                author: info.author,
+                lastModifier: info.lastModifier,
+                lastModifyDate: info.lastModifyDate,
+            };
+        }
+        catch {
+            return undefined;
+        }
     }
 }
 exports.JavaDocParser = JavaDocParser;

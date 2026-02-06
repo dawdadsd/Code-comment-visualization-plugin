@@ -87,10 +87,19 @@ export interface GitAuthorInfo {
     readonly lastModifyDate: string;
 }
 /**
+ * 方法类别 —— 区分普通方法和构造函数
+ *
+ * 【为什么需要区分？】
+ * VS Code SymbolKind 中 Method(6) 和 Constructor(9) 是不同的值，
+ * 侧边栏需要用不同图标和分组来展示它们
+ */
+export type MethodKind = "method" | "constructor";
+/**
  * 方法文档 - 单个方法的完整信息
  */
 export interface MethodDoc {
     readonly id: MethodId;
+    readonly kind: MethodKind;
     readonly name: string;
     readonly signature: string;
     readonly startLine: LineNumber;
@@ -111,10 +120,11 @@ export interface ClassDoc {
     readonly packageName: string;
     readonly filePath: FilePath;
     readonly methods: readonly MethodDoc[];
+    readonly fields: readonly FieldDoc[];
+    readonly enumConstants: readonly EnumConstantDoc[];
     readonly gitInfo?: GitAuthorInfo | undefined;
     readonly javadocAuthor?: string | undefined;
     readonly javadocSince?: string | undefined;
-    readonly fields: readonly FieldDoc[];
 }
 /**
  * Extension → Webview 的下行消息
@@ -134,7 +144,7 @@ export type DownstreamMessage = {
     readonly type: "clearView";
 };
 /**
- * File/Content Document - Column full message
+ * 字段文档 - 普通字段和常量的信息
  */
 export interface FieldDoc {
     readonly name: string;
@@ -145,6 +155,25 @@ export interface FieldDoc {
     readonly description: string;
     readonly isConstant: boolean;
     readonly accessModifier: AccessModifier;
+    readonly belongsTo: string;
+}
+/**
+ * 枚举常量文档 - 独立于 FieldDoc 的类型
+ *
+ * 【为什么不复用 FieldDoc？】
+ * 枚举常量的语法与普通字段完全不同：
+ *   - 没有类型声明（类型就是枚举自身）
+ *   - 没有访问修饰符（隐式 public static final）
+ *   - 可以有构造参数：SUCCESS(200, "OK")
+ *   - 用逗号分隔而非分号
+ * 强行复用会导致 extractFieldType / extractAccessModifier 产生错误结果
+ */
+export interface EnumConstantDoc {
+    readonly name: string;
+    readonly startLine: LineNumber;
+    readonly hasComment: boolean;
+    readonly description: string;
+    readonly arguments: string;
     readonly belongsTo: string;
 }
 /**

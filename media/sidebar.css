@@ -1,5 +1,15 @@
 /**
  * sidebar.css - Webview 侧边栏样式
+ *
+ * 【布局结构】
+ * #root
+ *   .header              — 类信息 + 作者 + 切换按钮
+ *   .member-groups        — 分组容器
+ *     .member-group       — 单个分组（构造函数 / 方法 / 字段）
+ *       .group-header     — 分组标题（可折叠）
+ *       .group-content    — 分组内容
+ *         .method-item    — 方法/构造函数条目
+ *         .field-item     — 字段/枚举常量条目
  */
 
 /* ========== 基础重置 ========== */
@@ -148,15 +158,115 @@ body {
   height: 16px;
 }
 
-/* ========== 方法列表 ========== */
-.method-list {
+/* ========== 分组 ========== */
+.member-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.member-group {
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--vscode-editor-lineHighlightBackground);
+  border-bottom: 1px solid var(--vscode-widget-border);
+  transition: background-color 0.1s ease;
+}
+
+.group-header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.group-collapse-icon {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+
+.group-collapse-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.member-group.collapsed .group-collapse-icon {
+  transform: rotate(-90deg);
+}
+
+.member-group.collapsed .group-content {
+  display: none;
+}
+
+.member-group.collapsed .group-header {
+  border-bottom: none;
+}
+
+.group-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--vscode-textLink-foreground);
+  opacity: 0.85;
+}
+
+.group-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.group-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  letter-spacing: 0.3px;
+}
+
+.group-count {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  font-weight: 500;
+  margin-left: auto;
+}
+
+.group-content {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  padding: 6px;
 }
 
-.method-list.compact-mode {
+.group-content.compact-mode {
   gap: 6px;
+}
+
+/* ========== 类型图标（通用） ========== */
+.item-kind-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.item-kind-icon svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* ========== 简洁模式样式 ========== */
@@ -182,7 +292,6 @@ body {
 .method-compact-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
 }
@@ -401,6 +510,84 @@ body {
   margin-bottom: 12px;
   font-size: 13px;
   line-height: 1.6;
+}
+
+/* ========== 字段/枚举常量样式 ========== */
+.field-item {
+  padding: 8px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  transition: all 0.1s ease;
+}
+
+.field-item:hover {
+  background-color: var(--vscode-list-hoverBackground);
+}
+
+.field-item.no-comment {
+  opacity: 0.6;
+}
+
+.field-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.field-name {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--vscode-symbolIcon-variableForeground, #9CDCFE);
+  font-family: var(--vscode-editor-font-family);
+}
+
+.field-name.enum-name {
+  color: var(--vscode-symbolIcon-enumeratorForeground, #D4D4D4);
+  text-transform: none;
+}
+
+.field-type {
+  font-size: 11px;
+  color: var(--vscode-symbolIcon-classForeground, #4EC9B0);
+  font-family: var(--vscode-editor-font-family);
+}
+
+.constant-badge {
+  font-size: 9px;
+  padding: 0 4px;
+  border-radius: 2px;
+  background: var(--vscode-inputValidation-infoBorder);
+  color: var(--vscode-editor-background);
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.enum-args {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  font-family: var(--vscode-editor-font-family);
+}
+
+.field-description {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.field-description.no-doc {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* 枚举常量：微妙的视觉区分 */
+.field-item.enum-constant {
+  border-left: 2px solid var(--vscode-symbolIcon-enumeratorMemberForeground, #75BEFF);
 }
 
 /* ========== 标签表格 ========== */

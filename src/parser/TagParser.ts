@@ -6,13 +6,13 @@
  * @return 返回值描述
  * @throws ExceptionType 异常描述
  * @since 1.0
- * @author 作者名
+ * @author xiaowu
  *
  * 本模块负责将原始文本解析成结构化的 TagTable
  */
 
-import type { TagTable, ParamTag, ReturnTag, ThrowsTag } from '../types.js';
-import { EMPTY_TAG_TABLE } from '../types.js';
+import type { TagTable, ParamTag, ReturnTag, ThrowsTag } from "../types.js";
+import { EMPTY_TAG_TABLE } from "../types.js";
 
 /**
  * 解析 Javadoc 标签
@@ -28,19 +28,13 @@ import { EMPTY_TAG_TABLE } from '../types.js';
  * // 返回: { params: [{name:'id', type:'Long', description:'用户ID'}], ... }
  */
 export function parseTagTable(rawTags: string, signature: string): TagTable {
-  // 空文本直接返回空表格
   if (!rawTags.trim()) {
     return EMPTY_TAG_TABLE;
   }
 
-  // 从方法签名中提取参数类型映射
-  // 例如：'public void save(Long id, String name)' => Map { 'id' => 'Long', 'name' => 'String' }
   const paramTypes = parseSignatureParams(signature);
-
-  // 从方法签名中提取返回类型
   const returnType = parseReturnType(signature);
 
-  // 初始化结果容器
   const params: ParamTag[] = [];
   const throws: ThrowsTag[] = [];
   const see: string[] = [];
@@ -49,25 +43,16 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
   let author: string | null = null;
   let deprecated: string | null = null;
 
-  // 【正则解释】
-  // /@(param|return|...)\\s+/ 匹配 @标签名 加至少一个空白字符
-  // 使用 split 分割后，奇数位置是标签名，偶数位置是内容
-  const tagPattern = /@(param|return|returns|throws|exception|since|author|deprecated|see)\s+/g;
+  const tagPattern =
+    /@(param|return|returns|throws|exception|since|author|deprecated|see)\s+/g;
   const segments = rawTags.split(tagPattern);
 
-  // segments 结构示例：
-  // 输入: '@param id 描述\n@return 返回值'
-  // 分割: ['', 'param', 'id 描述\n', 'return', '返回值']
-  //        0     1          2           3          4
-  // 所以从 index=1 开始，步长为 2
-
   for (let i = 1; i < segments.length; i += 2) {
-    const tagName = segments[i];            // 标签名
-    const content = segments[i + 1]?.trim() ?? '';  // 标签内容
+    const tagName = segments[i];
+    const content = segments[i + 1]?.trim() ?? "";
 
-    // 根据标签类型分别处理
     switch (tagName) {
-      case 'param': {
+      case "param": {
         const param = parseParamTag(content, paramTypes);
         if (param) {
           params.push(param);
@@ -75,18 +60,16 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
         break;
       }
 
-      case 'return':
-      case 'returns': {
-        // void 方法不需要 @return
-        if (returnType !== 'void') {
+      case "return":
+      case "returns": {
+        if (returnType !== "void") {
           returns = { type: returnType, description: content };
         }
         break;
       }
 
-      case 'throws':
-      case 'exception': {
-        // @throws 和 @exception 是同义词
+      case "throws":
+      case "exception": {
         const throwsTag = parseThrowsTag(content);
         if (throwsTag) {
           throws.push(throwsTag);
@@ -94,19 +77,19 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
         break;
       }
 
-      case 'since':
+      case "since":
         since = content;
         break;
 
-      case 'author':
+      case "author":
         author = content;
         break;
 
-      case 'deprecated':
+      case "deprecated":
         deprecated = content;
         break;
 
-      case 'see':
+      case "see":
         see.push(content);
         break;
     }
@@ -115,87 +98,93 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
   return { params, returns, throws, since, author, deprecated, see };
 }
 
+// ========== 标签内容解析 ==========
+
 /**
  * 解析单个 @param 标签
- *
- * @param content - 标签内容，格式："paramName 描述文字"
- * @param paramTypes - 参数名到类型的映射
  */
 function parseParamTag(
   content: string,
-  paramTypes: Map<string, string>
+  paramTypes: Map<string, string>,
 ): ParamTag | null {
-  // 匹配：参数名（单词） + 空格 + 剩余描述
-  // /s 标志让 . 也能匹配换行符（处理多行描述）
   const match = /^(\w+)\s*(.*)$/s.exec(content);
   if (!match) {
     return null;
   }
 
-  const name = match[1] ?? '';
-  const description = match[2]?.trim() ?? '';
-  // 从签名中查找类型，找不到用 'unknown'
-  const type = paramTypes.get(name) ?? 'unknown';
+  const name = match[1] ?? "";
+  const description = match[2]?.trim() ?? "";
+  const type = paramTypes.get(name) ?? "unknown";
 
   return { name, type, description };
 }
 
 /**
  * 解析单个 @throws 标签
- *
- * @param content - 标签内容，格式："ExceptionType 描述文字"
  */
 function parseThrowsTag(content: string): ThrowsTag | null {
-  // 匹配：异常类型（可含包名，如 java.io.IOException） + 空格 + 描述
   const match = /^([\w.]+)\s*(.*)$/s.exec(content);
   if (!match) {
     return null;
   }
 
   return {
-    type: match[1] ?? '',
-    description: match[2]?.trim() ?? '',
+    type: match[1] ?? "",
+    description: match[2]?.trim() ?? "",
   };
 }
 
 /**
+ * Java 参数修饰符和关键字
+ * 出现在参数类型之前，需要在提取类型时剥离
+ *
+ * 例如: "final @NotNull @Valid String name"
+ *       需要提取出 "String"，而不是 "final @NotNull @Valid String"
+ */
+const PARAM_MODIFIERS = new Set(["final"]);
+
+/**
  * 从方法签名中提取参数类型映射
  *
+ * 【改进点】
+ * 1. 使用括号深度匹配提取参数列表，正确处理泛型中的 `>)`
+ * 2. 剥离参数注解（@NotNull, @RequestBody 等）和修饰符（final）
+ *
  * @example
- * parseSignatureParams('public void save(Long id, String name)')
+ * parseSignatureParams('public void save(@NotNull Long id, @Valid final String name)')
  * // 返回: Map { 'id' => 'Long', 'name' => 'String' }
  *
- * 【处理泛型的挑战】
- * 签名：public void process(Map<String, List<User>> data, int count)
- * 不能简单按逗号分割，因为泛型内部也有逗号
- * 需要用栈来追踪 < > 的嵌套层级
+ * parseSignatureParams('public void process(Map<String, List<User>> data)')
+ * // 返回: Map { 'data' => 'Map<String, List<User>>' }
  */
 function parseSignatureParams(signature: string): Map<string, string> {
   const map = new Map<string, string>();
 
-  // 提取括号内的参数列表
-  const paramsMatch = /\(([^)]*)\)/.exec(signature);
-  if (!paramsMatch?.[1]) {
+  // 用深度匹配提取括号内容（正确处理泛型中的嵌套括号）
+  const paramsStr = extractParenContent(signature);
+  if (!paramsStr) {
     return map;
   }
 
-  const paramsStr = paramsMatch[1];
-
-  // 按逗号分割，但要处理泛型中的逗号
-  const params = splitParams(paramsStr);
+  // 按逗号分割（泛型感知）
+  const params = splitByTopLevelComma(paramsStr);
 
   for (const param of params) {
     const trimmed = param.trim();
     if (!trimmed) continue;
 
-    // 参数格式："Type name" 或 "Type<Generic> name"
+    // 剥离注解和修饰符，提取纯粹的 "Type name"
+    const cleaned = stripAnnotationsAndModifiers(trimmed);
+
     // 最后一个空格分隔类型和名称
-    const lastSpace = trimmed.lastIndexOf(' ');
+    // "Map<String, List<User>> data" → type="Map<String, List<User>>", name="data"
+    const lastSpace = cleaned.lastIndexOf(" ");
     if (lastSpace === -1) continue;
 
-    const type = trimmed.slice(0, lastSpace).trim();
-    const name = trimmed.slice(lastSpace + 1).trim();
+    const type = cleaned.slice(0, lastSpace).trim();
+    const name = cleaned.slice(lastSpace + 1).trim();
 
+    // 可变参数处理: "String... args" → type="String...", name="args"
     if (name && type) {
       map.set(name, type);
     }
@@ -205,41 +194,162 @@ function parseSignatureParams(signature: string): Map<string, string> {
 }
 
 /**
- * 智能分割参数列表（处理泛型中的逗号）
+ * 使用深度匹配提取第一对顶层圆括号的内容
  *
  * @example
- * splitParams('Map<String, Integer> map, int count')
- * // 返回: ['Map<String, Integer> map', 'int count']
- * // 注意：Map<String, Integer> 中的逗号不会被分割
+ * extractParenContent('public void save(Map<K, V> m, int n)') → 'Map<K, V> m, int n'
+ * extractParenContent('no parens here') → null
  */
-function splitParams(paramsStr: string): string[] {
+function extractParenContent(signature: string): string | null {
+  const openIndex = signature.indexOf("(");
+  if (openIndex === -1) return null;
+
+  let depth = 0;
+  for (let i = openIndex; i < signature.length; i++) {
+    const ch = signature[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") {
+      depth--;
+      if (depth === 0) {
+        const content = signature.slice(openIndex + 1, i);
+        return content.trim() || null;
+      }
+    }
+  }
+
+  // 括号未闭合（签名被截断），返回已有内容
+  const content = signature.slice(openIndex + 1);
+  return content.trim() || null;
+}
+
+/**
+ * 剥离参数声明中的注解和修饰符，只保留 "Type name"
+ *
+ * Java 参数声明完整格式:
+ *   [@Annotation]* [final] Type [<Generic>] [... ] name
+ *
+ * @example
+ *   "@NotNull final String name"           → "String name"
+ *   "@RequestBody @Valid User user"        → "User user"
+ *   "final Map<String, List<User>> data"   → "Map<String, List<User>> data"
+ *   "String... args"                       → "String... args"
+ */
+function stripAnnotationsAndModifiers(paramDecl: string): string {
+  // 逐个 token 处理，跳过注解和修饰符
+  // 难点在于泛型 token 内部有空格（不能简单 split）
+  // 策略：从左到右扫描，跳过 @xxx 和 final，剩余部分即 "Type name"
+
+  let remaining = paramDecl;
+
+  // 循环剥离开头的注解和修饰符
+  while (remaining.length > 0) {
+    const trimmed = remaining.trimStart();
+
+    // 跳过注解：@Xxx 或 @Xxx(...)
+    if (trimmed.startsWith("@")) {
+      remaining = stripLeadingAnnotation(trimmed);
+      continue;
+    }
+
+    // 跳过修饰符关键字
+    let skipped = false;
+    for (const modifier of PARAM_MODIFIERS) {
+      if (
+        trimmed.startsWith(modifier) &&
+        (trimmed.length === modifier.length ||
+          /\s/.test(trimmed[modifier.length] ?? ""))
+      ) {
+        remaining = trimmed.slice(modifier.length);
+        skipped = true;
+        break;
+      }
+    }
+
+    if (!skipped) {
+      return trimmed;
+    }
+  }
+
+  return remaining;
+}
+
+/**
+ * 跳过一个注解，返回剩余文本
+ *
+ * 处理两种形式：
+ *   @NotNull                → 跳到下一个空白
+ *   @RequestParam(value="x") → 跳到括号闭合
+ */
+function stripLeadingAnnotation(text: string): string {
+  // 跳过 @AnnotationName
+  let i = 1; // skip '@'
+  while (i < text.length && /[\w.]/.test(text[i] ?? "")) {
+    i++;
+  }
+
+  // 检查是否有括号参数 @Annotation(...)
+  if (text[i] === "(") {
+    let depth = 0;
+    while (i < text.length) {
+      if (text[i] === "(") depth++;
+      else if (text[i] === ")") {
+        depth--;
+        if (depth === 0) {
+          i++;
+          break;
+        }
+      }
+      i++;
+    }
+  }
+
+  return text.slice(i);
+}
+
+/**
+ * 按顶层逗号分割参数列表（泛型感知）
+ *
+ * 追踪 `<>` 和 `()` 的嵌套深度，只在最外层逗号处分割
+ *
+ * @example
+ * splitByTopLevelComma('Map<String, Integer> map, int count')
+ * // ['Map<String, Integer> map', ' int count']
+ */
+function splitByTopLevelComma(paramsStr: string): string[] {
   const result: string[] = [];
-  let current = '';
-  let depth = 0;  // 追踪 < > 的嵌套深度
+  let current = "";
+  let angleBracketDepth = 0;
+  let parenDepth = 0;
 
   for (const char of paramsStr) {
-    if (char === '<') {
-      depth++;      // 进入泛型
+    if (char === "<") {
+      angleBracketDepth++;
       current += char;
-    } else if (char === '>') {
-      depth--;      // 离开泛型
+    } else if (char === ">") {
+      angleBracketDepth--;
       current += char;
-    } else if (char === ',' && depth === 0) {
-      // 只有在最外层（不在泛型内）才按逗号分割
+    } else if (char === "(") {
+      parenDepth++;
+      current += char;
+    } else if (char === ")") {
+      parenDepth--;
+      current += char;
+    } else if (char === "," && angleBracketDepth === 0 && parenDepth === 0) {
       result.push(current);
-      current = '';
+      current = "";
     } else {
       current += char;
     }
   }
 
-  // 别忘了最后一个参数
   if (current.trim()) {
     result.push(current);
   }
 
   return result;
 }
+
+// ========== 返回类型解析 ==========
 
 /**
  * 从方法签名中提取返回类型
@@ -252,20 +362,74 @@ function splitParams(paramsStr: string): string[] {
  */
 function parseReturnType(signature: string): string {
   // 移除方法体部分
-  const cleanSig = signature.replace(/\{.*$/, '').trim();
+  const cleanSig = signature.replace(/\{.*$/, "").trim();
 
   // 移除方法级泛型声明 <T, U>（在返回类型之前）
-  const withoutGenericDecl = cleanSig.replace(/<[^>]+>\s*(?=\w+\s*\()/, '');
+  // 需要深度匹配以正确处理嵌套泛型：<T extends Comparable<T>>
+  const withoutGenericDecl = removeMethodGenericDecl(cleanSig);
 
   // 尝试匹配：修饰符... 返回类型 方法名(
-  const match = /(?:public|private|protected|static|final|abstract|synchronized|\s)*\s*([\w<>\[\],\s?]+?)\s+\w+\s*\(/.exec(withoutGenericDecl);
+  const match =
+    /(?:public|private|protected|static|final|abstract|synchronized|default|native|\s)*\s*([\w<>\[\],\s?]+?)\s+\w+\s*\(/.exec(
+      withoutGenericDecl,
+    );
 
   if (match?.[1]) {
     return match[1].trim();
   }
 
-  // 备用方案：直接提取括号前的最后一个类型
-  // 例如：User findById(Long id) -> 提取 User
+  // 备用方案：提取括号前的最后一个类型标识
   const fallbackMatch = /([\w<>\[\]]+)\s+\w+\s*\(/.exec(withoutGenericDecl);
-  return fallbackMatch?.[1]?.trim() ?? 'void';
+  return fallbackMatch?.[1]?.trim() ?? "void";
+}
+
+/**
+ * 移除方法级泛型声明
+ *
+ * 方法级泛型声明位于修饰符和返回类型之间：
+ *   public <T extends Comparable<T>> T findMax(List<T> list)
+ *          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+ *          这部分需要移除
+ *
+ * 不能用简单正则 /<[^>]+>/ 因为泛型可能嵌套
+ */
+function removeMethodGenericDecl(signature: string): string {
+  // 方法级泛型声明的特征：< 出现在方法名和 ( 之前
+  // 策略：找到第一个 <，用深度匹配找到对应的 >，
+  // 检查 > 之后是否紧跟 "Type methodName("，如果是则移除
+
+  const openAngle = signature.indexOf("<");
+  const openParen = signature.indexOf("(");
+
+  // 没有泛型或泛型在参数列表内（不是方法级声明）
+  if (openAngle === -1 || openParen === -1 || openAngle > openParen) {
+    return signature;
+  }
+
+  // 深度匹配找到对应的 >
+  let depth = 0;
+  let closeAngle = -1;
+  for (let i = openAngle; i < signature.length; i++) {
+    if (signature[i] === "<") depth++;
+    else if (signature[i] === ">") {
+      depth--;
+      if (depth === 0) {
+        closeAngle = i;
+        break;
+      }
+    }
+  }
+
+  if (closeAngle === -1) return signature;
+
+  // 检查 > 后面是否跟着 "Type methodName(" 模式
+  // 如果是，说明这是方法级泛型声明
+  const afterGeneric = signature.slice(closeAngle + 1).trimStart();
+  if (/^\w+\s+\w+\s*\(/.test(afterGeneric)) {
+    // 是方法级泛型声明，移除它
+    return signature.slice(0, openAngle) + afterGeneric;
+  }
+
+  // 不是方法级声明（可能是返回类型的泛型），保留
+  return signature;
 }

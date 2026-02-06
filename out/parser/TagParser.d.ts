@@ -6,11 +6,11 @@
  * @return 返回值描述
  * @throws ExceptionType 异常描述
  * @since 1.0
- * @author 作者名
+ * @author xiaowu
  *
  * 本模块负责将原始文本解析成结构化的 TagTable
  */
-import type { TagTable } from '../types.js';
+import type { TagTable } from "../types.js";
 /**
  * 解析 Javadoc 标签
  *

@@ -6,8 +6,8 @@ import java.util.List;
 /**
  * 用户服务类，提供用户相关的核心业务操作。
  *
- * @author zhangsan
- * @since 1.0
+ * @author xiaowu
+ * @since 2.0
  */
 public class UserService {
     /**

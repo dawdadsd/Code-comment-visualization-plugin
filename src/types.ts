@@ -116,10 +116,20 @@ export interface GitAuthorInfo {
 }
 
 /**
+ * 方法类别 —— 区分普通方法和构造函数
+ *
+ * 【为什么需要区分？】
+ * VS Code SymbolKind 中 Method(6) 和 Constructor(9) 是不同的值，
+ * 侧边栏需要用不同图标和分组来展示它们
+ */
+export type MethodKind = "method" | "constructor";
+
+/**
  * 方法文档 - 单个方法的完整信息
  */
 export interface MethodDoc {
   readonly id: MethodId; // 唯一标识，格式："方法名_行号"
+  readonly kind: MethodKind; // 方法类别：普通方法 or 构造函数
   readonly name: string; // 方法名
   readonly signature: string; // 完整签名，如 "public User findById(Long id)"
   readonly startLine: LineNumber; // 方法起始行（用于跳转）
@@ -140,10 +150,11 @@ export interface ClassDoc {
   readonly packageName: string; // 包名
   readonly filePath: FilePath; // 文件路径
   readonly methods: readonly MethodDoc[]; // 方法列表（扁平化，含内部类）
+  readonly fields: readonly FieldDoc[]; // 字段列表
+  readonly enumConstants: readonly EnumConstantDoc[]; // 枚举常量列表
   readonly gitInfo?: GitAuthorInfo | undefined; // 类的 Git 作者信息（可选）
   readonly javadocAuthor?: string | undefined; // Javadoc @author 标签
   readonly javadocSince?: string | undefined; // Javadoc @since 标签
-  readonly fields: readonly FieldDoc[];
 }
 
 /**
@@ -158,7 +169,7 @@ export type DownstreamMessage =
   | { readonly type: "clearView" };
 
 /**
- * File/Content Document - Column full message
+ * 字段文档 - 普通字段和常量的信息
  */
 export interface FieldDoc {
   readonly name: string;
@@ -170,6 +181,26 @@ export interface FieldDoc {
   readonly isConstant: boolean;
   readonly accessModifier: AccessModifier;
   readonly belongsTo: string;
+}
+
+/**
+ * 枚举常量文档 - 独立于 FieldDoc 的类型
+ *
+ * 【为什么不复用 FieldDoc？】
+ * 枚举常量的语法与普通字段完全不同：
+ *   - 没有类型声明（类型就是枚举自身）
+ *   - 没有访问修饰符（隐式 public static final）
+ *   - 可以有构造参数：SUCCESS(200, "OK")
+ *   - 用逗号分隔而非分号
+ * 强行复用会导致 extractFieldType / extractAccessModifier 产生错误结果
+ */
+export interface EnumConstantDoc {
+  readonly name: string; // 枚举常量名，如 "SUCCESS"
+  readonly startLine: LineNumber; // 声明所在行
+  readonly hasComment: boolean; // 是否有 Javadoc
+  readonly description: string; // Javadoc 描述
+  readonly arguments: string; // 构造参数文本，如 "(200, \"OK\")"，无参数则为 ""
+  readonly belongsTo: string; // 所属枚举类名
 }
 /**
  * Webview → Extension 的上行消息
