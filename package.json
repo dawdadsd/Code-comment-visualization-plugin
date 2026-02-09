@@ -2,11 +2,11 @@
   "name": "comment-sidebar",
   "displayName": "Comment Sidebar",
   "description": "在侧边栏实时展示代码文档，支持 Java / TypeScript / JavaScript，支持双向联动导航",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "publisher": "xiaowu",
   "repository": {
     "type": "git",
-    "url": "git@github.com:dawdadsd/Code-comment-visualization-plugin.git",
+    "url": "https://github.com/dawdadsd/Code-comment-visualization-plugin.git",
     "homepage": "https://github.com/dawdadsd/Code-comment-visualization-plugin#readme"
   },
   "license": "MIT",

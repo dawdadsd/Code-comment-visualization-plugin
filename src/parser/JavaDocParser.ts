@@ -41,7 +41,8 @@ import type {
   AccessModifier,
   GitAuthorInfo,
 } from "../types.js";
-import { MethodId, LineNumber, FilePath, EMPTY_TAG_TABLE } from "../types.js";
+import { MethodId, LineNumber, FilePath } from "../types.js";
+import { createEmptyTagTable } from "../parser/TagParser.js";
 
 // ========== 内部类型 ==========
 
@@ -221,7 +222,7 @@ export class JavaDocParser {
 
       const { description, tags } = hasComment
         ? this.parseJavadoc(rawComment, fullSignature)
-        : { description: "", tags: EMPTY_TAG_TABLE };
+        : { description: "", tags: createEmptyTagTable() };
 
       const accessModifier = this.extractAccessModifierFromLine(fullSignature);
       const kind: MethodKind = isConstructorSymbol(symbol)
