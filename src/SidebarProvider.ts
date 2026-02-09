@@ -27,11 +27,7 @@ import type {
 import { JavaDocParser } from "./parser/JavaDocParser.js";
 import { debounce } from "./utils/debounce.js";
 import { binarySearchMethod } from "./utils/binarySearch.js";
-import type {
-  MethodDoc,
-  MethodId,
-  DownstreamMessage,
-} from "./types.js";
+import type { MethodDoc, MethodId, DownstreamMessage } from "./types.js";
 import { isSupportedLanguage, isUpstreamMessage, LineNumber } from "./types.js";
 
 const HIGHLIGHT_DEBOUNCE_DELAY = 300;
@@ -231,9 +227,11 @@ export class SidebarProvider implements WebviewViewProvider, Disposable {
    */
   private registerWebviewMessageListener(webview: vscode.Webview): void {
     this.webviewMessageDisposable?.dispose();
-    this.webviewMessageDisposable = webview.onDidReceiveMessage((message: unknown) => {
-      this.handleUpstreamMessage(message);
-    });
+    this.webviewMessageDisposable = webview.onDidReceiveMessage(
+      (message: unknown) => {
+        this.handleUpstreamMessage(message);
+      },
+    );
   }
 
   /**
@@ -241,7 +239,9 @@ export class SidebarProvider implements WebviewViewProvider, Disposable {
    * @param document - 可选的文本文档
    * @returns 符合条件的 Java 文档，或 undefined
    */
-  private getTargetSupportDocument(document?: TextDocument): TextDocument | undefined {
+  private getTargetSupportDocument(
+    document?: TextDocument,
+  ): TextDocument | undefined {
     const candidate = document ?? vscode.window.activeTextEditor?.document;
     if (!candidate || !isSupportedLanguage(candidate.languageId)) {
       return undefined;

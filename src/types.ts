@@ -90,18 +90,6 @@ export interface TagTable {
   readonly deprecated: string | null;
   readonly see: readonly string[];
 }
-/**
- * nul tag tables : method no javadoc use this
- */
-export const EMPTY_TAG_TABLE: TagTable = {
-  params: [],
-  returns: null,
-  throws: [],
-  since: null,
-  author: null,
-  deprecated: null,
-  see: [],
-} as const satisfies TagTable;
 
 /**
  * Git 作者信息
@@ -264,6 +252,8 @@ const SUPPORTED_LANGUAGE_IDS: Set<string> = new Set([
   "javascript",
 ]);
 
-export function isSupportedLanguage(languageId: string): languageId is SupportedLanguageId {
+export function isSupportedLanguage(
+  languageId: string,
+): languageId is SupportedLanguageId {
   return SUPPORTED_LANGUAGE_IDS.has(languageId as SupportedLanguageId);
 }
