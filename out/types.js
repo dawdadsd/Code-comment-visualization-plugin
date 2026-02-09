@@ -1,12 +1,8 @@
 "use strict";
-/**
- * types.ts : 定义类型文件集中管理
- * @authro xiaowu
- * @since 2026/02/
- */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_CONFIG = exports.EMPTY_TAG_TABLE = exports.ACCESS_MODIFIERS = exports.FilePath = exports.MethodId = exports.LineNumber = void 0;
 exports.isUpstreamMessage = isUpstreamMessage;
+exports.isSupportedLanguage = isSupportedLanguage;
 const LineNumber = (n) => n;
 exports.LineNumber = LineNumber;
 const MethodId = (id) => id;
@@ -65,4 +61,12 @@ exports.DEFAULT_CONFIG = {
     debounceDelay: 300,
     maxMethods: 200,
 };
+const SUPPORTED_LANGUAGE_IDS = new Set([
+    "java",
+    "typescript",
+    "javascript",
+]);
+function isSupportedLanguage(languageId) {
+    return SUPPORTED_LANGUAGE_IDS.has(languageId);
+}
 //# sourceMappingURL=types.js.map

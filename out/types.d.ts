@@ -1,9 +1,4 @@
 /**
- * types.ts : 定义类型文件集中管理
- * @authro xiaowu
- * @since 2026/02/
- */
-/**
  * brand Types
  * example :
  * function jumpToLine(line : number)
@@ -208,4 +203,6 @@ export interface ExtensionConfig {
  * 默认配置
  */
 export declare const DEFAULT_CONFIG: ExtensionConfig;
+export type SupportedLanguageId = "java" | "typescript" | "javascript";
+export declare function isSupportedLanguage(languageId: string): languageId is SupportedLanguageId;
 export {};

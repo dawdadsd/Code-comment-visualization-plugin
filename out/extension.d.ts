@@ -21,11 +21,10 @@ import * as vscode from "vscode";
  * 扩展激活函数
  *
  * @param context - 扩展上下文，用于管理资源生命周期
- *
- * 【ExtensionContext 的作用】
- * 1. subscriptions：Disposable 数组，扩展卸载时自动清理
- * 2. extensionUri：扩展根目录的 URI
- * 3. globalState/workspaceState：持久化存储
+ *                  【ExtensionContext 的作用】
+ *                   1. subscriptions：Disposable 数组，扩展卸载时自动清理
+ *                   2. extensionUri：扩展根目录的 URI
+ *                   3. globalState/workspaceState：持久化存储
  */
 export declare function activate(context: vscode.ExtensionContext): void;
 /**

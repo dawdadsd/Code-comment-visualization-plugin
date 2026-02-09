@@ -55,6 +55,7 @@ const JavaDocParser_js_1 = require("./parser/JavaDocParser.js");
 const debounce_js_1 = require("./utils/debounce.js");
 const binarySearch_js_1 = require("./utils/binarySearch.js");
 const types_js_1 = require("./types.js");
+const HIGHLIGHT_DEBOUNCE_DELAY = 300;
 /**
  * Webview 侧边栏 Provider
  * - WebviewViewProvider：VS Code 要求的接口，用于创建侧边栏
@@ -62,29 +63,12 @@ const types_js_1 = require("./types.js");
  */
 class SidebarProvider {
     extensionUri;
-    /**
-     * 当前的 Webview 实例 - download on demand
-     */
     view;
-    /**
-     * 当前文件的方法列表（用于反向联动的二分查找）
-     * currentMethods : only replacements is allowed,not modification
-     */
     currentMethods = [];
-    /**
-     * 上次高亮的方法 ID
-     * used to prevent duplicate highlighting
-     */
     lastHighlightId = null;
-    /**
-     * Javadoc 解析器实例
-     */
     parser;
-    /**
-     * cn - 防抖后的高亮函数
-     * en - debounced highlight function
-     */
     debouncedHighlight;
+    webviewMessageDisposable;
     /**
      * 构造函数
      *
@@ -97,7 +81,7 @@ class SidebarProvider {
         this.parser = new JavaDocParser_js_1.JavaDocParser();
         this.debouncedHighlight = (0, debounce_js_1.debounce)((line) => {
             this.updateHighlight((0, types_js_1.LineNumber)(line));
-        }, 300);
+        }, HIGHLIGHT_DEBOUNCE_DELAY);
     }
     /**
      * 解析 Webview ( called by vscode)
@@ -111,22 +95,10 @@ class SidebarProvider {
      */
     resolveWebviewView(webviewView, _context, _token) {
         this.view = webviewView;
-        webviewView.webview.options = {
-            enableScripts: true,
-            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
-        };
-        webviewView.webview.html = this.getHtmlContent(webviewView.webview);
-        // 监听 Webview 发来的消息（上行消息）
-        webviewView.webview.onDidReceiveMessage((message) => {
-            this.handleUpstreamMessage(message);
-        });
-        // 如果当前已经打开了 Java 文件，立即解析并显示
-        const activeEditor = vscode.window.activeTextEditor;
-        if (activeEditor?.document.languageId === "java") {
-            void this.refresh(activeEditor.document);
-        }
+        this.configureWebview(webviewView.webview);
+        this.registerWebviewMessageListener(webviewView.webview);
+        void this.refresh();
     }
-    // ========== 公共方法 ==========
     /**
      * 刷新侧边栏内容
      *
@@ -137,25 +109,19 @@ class SidebarProvider {
      * 这里 parser.parse() 是异步的（需要调用 VS Code API）
      */
     async refresh(document) {
-        // 如果没传文档，使用当前活动的文档
-        const doc = document ?? vscode.window.activeTextEditor?.document;
-        // 检查是否是 Java 文件
-        if (!doc || doc.languageId !== "java") {
+        const doc = this.getTargetSupportDocument(document);
+        if (!doc) {
             this.clearView();
             return;
         }
         try {
-            // 解析文档
             const classDoc = await this.parser.parse(doc);
-            // 更新状态
             this.currentMethods = classDoc.methods;
-            this.lastHighlightId = null; // 重置高亮状态
-            // 发送数据给 Webview
+            this.lastHighlightId = null;
             this.postMessage({ type: "updateView", payload: classDoc });
         }
         catch (error) {
             console.error("[JavaDocSidebar] Parse error:", error);
-            // 解析失败时保持当前视图不变
         }
     }
     /**
@@ -182,8 +148,11 @@ class SidebarProvider {
      * 让我们有机会清理资源（如定时器、事件监听器等）
      */
     dispose() {
-        // 目前没有需要清理的资源
-        // 但保留这个方法，方便将来扩展
+        this.webviewMessageDisposable?.dispose();
+        this.webviewMessageDisposable = undefined;
+        this.view = undefined;
+        this.currentMethods = [];
+        this.lastHighlightId = null;
     }
     /**
      * cn - 更新高亮状态
@@ -207,21 +176,15 @@ class SidebarProvider {
      * @param message - 原始消息（类型未知）
      */
     handleUpstreamMessage(message) {
-        // 先用类型守卫验证消息格式
         if (!(0, types_js_1.isUpstreamMessage)(message)) {
             console.warn("[JavaDocSidebar] Invalid upstream message:", message);
             return;
         }
-        // 根据消息类型分发处理
-        // 【switch 的类型收窄】
-        // TypeScript 知道进入 case 'jumpToLine' 后，
-        // message 的类型是 { type: 'jumpToLine', payload: { line: LineNumber } }
         switch (message.type) {
             case "jumpToLine":
                 this.jumpToLine(message.payload.line);
                 break;
             case "webviewReady":
-                // Webview 加载完成，触发一次刷新
                 void this.refresh();
                 break;
         }
@@ -233,14 +196,12 @@ class SidebarProvider {
      */
     jumpToLine(line) {
         const editor = vscode.window.activeTextEditor;
-        if (!editor)
+        if (!editor) {
             return;
-        // 创建位置和范围对象
+        }
         const position = new vscode.Position(line, 0);
         const range = new vscode.Range(position, position);
-        // 设置光标位置
         editor.selection = new vscode.Selection(position, position);
-        // 滚动编辑器，让目标行居中显示
         editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
     }
     /**
@@ -256,6 +217,39 @@ class SidebarProvider {
         void this.view?.webview.postMessage(message);
     }
     /**
+     * 配置 Webview（设置 HTML 内容和安全选项）
+     * @param webview webview 实例
+     */
+    configureWebview(webview) {
+        webview.options = {
+            enableScripts: true,
+            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, "media")],
+        };
+        webview.html = this.getHtmlContent(webview);
+    }
+    /**
+     * 注册 Webview 消息监听器
+     * @param webview webview 实例
+     */
+    registerWebviewMessageListener(webview) {
+        this.webviewMessageDisposable?.dispose();
+        this.webviewMessageDisposable = webview.onDidReceiveMessage((message) => {
+            this.handleUpstreamMessage(message);
+        });
+    }
+    /**
+     * 获取目标 Java 文档
+     * @param document - 可选的文本文档
+     * @returns 符合条件的 Java 文档，或 undefined
+     */
+    getTargetSupportDocument(document) {
+        const candidate = document ?? vscode.window.activeTextEditor?.document;
+        if (!candidate || !(0, types_js_1.isSupportedLanguage)(candidate.languageId)) {
+            return undefined;
+        }
+        return candidate;
+    }
+    /**
      * 生成 Webview 的 HTML 内容
      *
      * @param webview - Webview 实例
@@ -266,16 +260,9 @@ class SidebarProvider {
      * 3. 需要设置 Content-Security-Policy
      */
     getHtmlContent(webview) {
-        // 将本地文件路径转换为 Webview 可访问的 URI
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "sidebar.css"));
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this.extensionUri, "media", "sidebar.js"));
-        // 生成随机 nonce（用于 CSP）
         const nonce = this.getNonce();
-        // 返回 HTML
-        // 【Content-Security-Policy 解释】
-        // default-src 'none'：默认禁止所有资源
-        // style-src：允许加载样式
-        // script-src 'nonce-xxx'：只允许带有指定 nonce 的脚本执行
         return /* html */ `
       <!DOCTYPE html>
       <html lang="zh-CN">

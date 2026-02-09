@@ -351,13 +351,14 @@ class JavaDocParser {
      */
     cleanComment(raw) {
         return raw
+            .replace(/\r\n/g, "\n")
             .replace(/\/\*\*|\*\//g, "")
             .split("\n")
             .map((line) => line.replace(/^\s*\*\s?/, ""))
             .join("\n")
+            .replace(/\n{3,}/g, "\n\n")
             .trim();
     }
-    // ========== 签名提取 ==========
     /**
      * 提取完整的方法签名（处理跨行声明）
      *

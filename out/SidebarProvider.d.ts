@@ -23,29 +23,12 @@ import type { WebviewView, WebviewViewProvider, WebviewViewResolveContext, Cance
  */
 export declare class SidebarProvider implements WebviewViewProvider, Disposable {
     private readonly extensionUri;
-    /**
-     * 当前的 Webview 实例 - download on demand
-     */
     private view;
-    /**
-     * 当前文件的方法列表（用于反向联动的二分查找）
-     * currentMethods : only replacements is allowed,not modification
-     */
     private currentMethods;
-    /**
-     * 上次高亮的方法 ID
-     * used to prevent duplicate highlighting
-     */
     private lastHighlightId;
-    /**
-     * Javadoc 解析器实例
-     */
     private readonly parser;
-    /**
-     * cn - 防抖后的高亮函数
-     * en - debounced highlight function
-     */
     private readonly debouncedHighlight;
+    private webviewMessageDisposable;
     /**
      * 构造函数
      *
@@ -121,6 +104,22 @@ export declare class SidebarProvider implements WebviewViewProvider, Disposable 
      * 我们不关心它的结果，用 void 表示忽略返回值
      */
     private postMessage;
+    /**
+     * 配置 Webview（设置 HTML 内容和安全选项）
+     * @param webview webview 实例
+     */
+    private configureWebview;
+    /**
+     * 注册 Webview 消息监听器
+     * @param webview webview 实例
+     */
+    private registerWebviewMessageListener;
+    /**
+     * 获取目标 Java 文档
+     * @param document - 可选的文本文档
+     * @returns 符合条件的 Java 文档，或 undefined
+     */
+    private getTargetSupportDocument;
     /**
      * 生成 Webview 的 HTML 内容
      *
