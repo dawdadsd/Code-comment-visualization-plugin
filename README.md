@@ -1,3 +1,5 @@
+[中文](./README.md) | [English](./README.en.md)
+
 # Doc Sidebar
 
 在 VS Code 侧边栏实时展示代码文档，当前支持 Java / TypeScript / JavaScript，支持双向联动导航。
