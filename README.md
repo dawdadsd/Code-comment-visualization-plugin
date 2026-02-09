@@ -45,4 +45,4 @@
 
 ## 许可证
 
-本项目基于 MIT License 发布，详见 [LICENSE](LICENSE)。
+本项目基于 MIT License 发布，详见 [LICENSE](https://github.com/dawdadsd/Code-comment-visualization-plugin/blob/main/LICENSE)。

@@ -20,17 +20,19 @@
 import * as vscode from "vscode";
 import type { Disposable } from "vscode";
 import { SidebarProvider } from "./SidebarProvider.js";
-import { clearAllSymbolCache, clearSymbolCache } from "./parser/SymbolResolver.js";
+import {
+  clearAllSymbolCache,
+  clearSymbolCache,
+} from "./parser/SymbolResolver.js";
 import { isSupportedLanguage } from "./types.js";
 /**
  * 扩展激活函数
- *
- * @param context - 扩展上下文，用于管理资源生命周期
- *
- * 【ExtensionContext 的作用】
+ *【ExtensionContext 的作用】
  * 1. subscriptions：Disposable 数组，扩展卸载时自动清理
  * 2. extensionUri：扩展根目录的 URI
  * 3. globalState/workspaceState：持久化存储
+ *
+ * @param context - 扩展上下文，用于管理资源生命周期
  */
 export function activate(context: vscode.ExtensionContext): void {
   console.log("[JavaDocSidebar] Extension is now active!");
@@ -50,14 +52,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const saveListener = createSaveListener(sidebarProvider);
 
-  const editorChangeListener = createEditorChangeListener(
-    sidebarProvider,
-  );
+  const editorChangeListener = createEditorChangeListener(sidebarProvider);
 
-  const selectionListener = createSelectionListener(
-    sidebarProvider,
-
-  );
+  const selectionListener = createSelectionListener(sidebarProvider);
 
   const closeListener = createCloseListener();
 
@@ -78,16 +75,14 @@ export function activate(context: vscode.ExtensionContext): void {
     selectionListener,
     closeListener,
     refreshCommand,
-    sidebarProvider
+    sidebarProvider,
   );
 }
 
 /**
  * create save event listener
  */
-function createSaveListener(
-  provider: SidebarProvider,
-): Disposable {
+function createSaveListener(provider: SidebarProvider): Disposable {
   return vscode.workspace.onDidSaveTextDocument((document) => {
     //TODO : More languages ​​will be supported in the future
     if (isSupportedLanguage(document.languageId)) {
@@ -100,9 +95,7 @@ function createSaveListener(
  * cn -创建编辑器切换监听器
  * en - create editor change listener
  */
-function createEditorChangeListener(
-  provider: SidebarProvider,
-): Disposable {
+function createEditorChangeListener(provider: SidebarProvider): Disposable {
   return vscode.window.onDidChangeActiveTextEditor((editor) => {
     const languageId = editor?.document.languageId;
     if (languageId && isSupportedLanguage(languageId)) {
@@ -118,9 +111,7 @@ function createEditorChangeListener(
  * en - create selection listener (reverse linkage)
  *
  */
-function createSelectionListener(
-  provider: SidebarProvider,
-): Disposable {
+function createSelectionListener(provider: SidebarProvider): Disposable {
   return vscode.window.onDidChangeTextEditorSelection((event) => {
     const languageId = event.textEditor.document.languageId;
     if (isSupportedLanguage(languageId)) {
@@ -130,10 +121,14 @@ function createSelectionListener(
   });
 }
 
+/**
+ * 创建关闭监听器 - 用于清理符号缓存
+ * @returns
+ */
 function createCloseListener(): Disposable {
   return vscode.workspace.onDidCloseTextDocument((document) => {
     clearSymbolCache(document.uri);
-  })
+  });
 }
 
 /**

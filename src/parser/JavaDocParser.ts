@@ -212,7 +212,11 @@ export class JavaDocParser {
       const endLine = LineNumber(symbol.range.end.line);
 
       const fullSignature = this.extractFullSignature(lines, startLine);
-      const rawComment = this.extractMemberComment(text, startLine, classComment);
+      const rawComment = this.extractMemberComment(
+        text,
+        startLine,
+        classComment,
+      );
       const hasComment = rawComment.length > 0;
 
       const { description, tags } = hasComment
@@ -268,7 +272,11 @@ export class JavaDocParser {
       );
       const lineText = lines[startLine]?.trim() ?? "";
 
-      const rawComment = this.extractMemberComment(text, startLine, classComment);
+      const rawComment = this.extractMemberComment(
+        text,
+        startLine,
+        classComment,
+      );
       const hasComment = rawComment.length > 0;
       const description = hasComment ? this.cleanComment(rawComment) : "";
 
@@ -323,7 +331,11 @@ export class JavaDocParser {
       );
       const lineText = lines[startLine]?.trim() ?? "";
 
-      const rawComment = this.extractMemberComment(text, startLine, classComment);
+      const rawComment = this.extractMemberComment(
+        text,
+        startLine,
+        classComment,
+      );
       const hasComment = rawComment.length > 0;
       const description = hasComment ? this.cleanComment(rawComment) : "";
 
@@ -442,14 +454,14 @@ export class JavaDocParser {
    */
   private cleanComment(raw: string): string {
     return raw
+      .replace(/\r\n/g, "\n")
       .replace(/\/\*\*|\*\//g, "")
       .split("\n")
       .map((line) => line.replace(/^\s*\*\s?/, ""))
       .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
       .trim();
   }
-
-  // ========== 签名提取 ==========
 
   /**
    * 提取完整的方法签名（处理跨行声明）
@@ -661,7 +673,12 @@ export class JavaDocParser {
   private parseLineForStructure(
     line: string,
     state: ParseState,
-  ): { code: string; openBraces: number; closeBraces: number; state: ParseState } {
+  ): {
+    code: string;
+    openBraces: number;
+    closeBraces: number;
+    state: ParseState;
+  } {
     let code = "";
     let openBraces = 0;
     let closeBraces = 0;

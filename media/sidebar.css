@@ -91,6 +91,7 @@ body {
   font-size: 12px;
   color: var(--vscode-foreground);
   opacity: 0.85;
+  white-space: pre-line;
   margin-top: 8px;
 }
 
@@ -328,11 +329,11 @@ body {
 }
 
 .meta-value.type-value {
-  color: var(--vscode-symbolIcon-classForeground, #4EC9B0);
+  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
 }
 
 .meta-value.params-value {
-  color: var(--vscode-symbolIcon-variableForeground, #9CDCFE);
+  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
 }
 
 .method-access {
@@ -466,12 +467,12 @@ body {
 
 .detail-type {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-classForeground, #4EC9B0);
+  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
 }
 
 .detail-params {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-variableForeground, #9CDCFE);
+  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
 }
 
 .method-signature {
@@ -510,6 +511,8 @@ body {
   margin-bottom: 12px;
   font-size: 13px;
   line-height: 1.6;
+  white-space: pre-line;
+  word-break: break-word;
 }
 
 /* ========== 字段/枚举常量样式 ========== */
@@ -540,18 +543,18 @@ body {
 .field-name {
   font-weight: 600;
   font-size: 12px;
-  color: var(--vscode-symbolIcon-variableForeground, #9CDCFE);
+  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
   font-family: var(--vscode-editor-font-family);
 }
 
 .field-name.enum-name {
-  color: var(--vscode-symbolIcon-enumeratorForeground, #D4D4D4);
+  color: var(--vscode-symbolIcon-enumeratorForeground, #d4d4d4);
   text-transform: none;
 }
 
 .field-type {
   font-size: 11px;
-  color: var(--vscode-symbolIcon-classForeground, #4EC9B0);
+  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
   font-family: var(--vscode-editor-font-family);
 }
 
@@ -587,7 +590,8 @@ body {
 
 /* 枚举常量：微妙的视觉区分 */
 .field-item.enum-constant {
-  border-left: 2px solid var(--vscode-symbolIcon-enumeratorMemberForeground, #75BEFF);
+  border-left: 2px solid
+    var(--vscode-symbolIcon-enumeratorMemberForeground, #75beff);
 }
 
 /* ========== 标签表格 ========== */
@@ -633,13 +637,13 @@ body {
 
 .tag-table .type-cell {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-classForeground, #4EC9B0);
+  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
   white-space: nowrap;
 }
 
 .tag-table .name-cell {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-variableForeground, #9CDCFE);
+  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
   white-space: nowrap;
 }
 
@@ -681,7 +685,7 @@ body {
 
 .class-separator::before,
 .class-separator::after {
-  content: '';
+  content: "";
   flex: 1;
   height: 1px;
   background-color: var(--vscode-widget-border);
