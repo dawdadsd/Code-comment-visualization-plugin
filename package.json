@@ -2,8 +2,8 @@
   "name": "comment-sidebar",
   "displayName": "Comment Sidebar",
   "description": "在侧边栏实时展示代码文档，支持 Java / TypeScript / JavaScript，支持双向联动导航",
-  "version": "0.7.1",
-  "publisher": "xiaowu",
+  "version": "0.7.4",
+  "publisher": "xiaowuDev",
   "repository": {
     "type": "git",
     "url": "https://github.com/dawdadsd/Code-comment-visualization-plugin.git",
@@ -28,7 +28,8 @@
   "activationEvents": [
     "onLanguage:java",
     "onLanguage:typescript",
-    "onLanguage:javascript"
+    "onLanguage:javascript",
+    "onLanguage:markdown"
   ],
   "main": "./out/extension.js",
   "contributes": {

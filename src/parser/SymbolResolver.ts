@@ -1,15 +1,15 @@
 /**
- * SymbolResolver.ts - 符号解析器
+ * SymbolResolver.ts
  *
- * 通过 VS Code 的 Document Symbol Provider 获取 Java 符号，
- * 并提供统一的分类判断函数供解析器复用。
- * vscode的document.version是递增函数,可以用来做简单的缓存.
+ * Resolve symbols through VS Code's Document Symbol Provider and expose
+ * small classification helpers reused by parsers.
  */
 
 import * as vscode from "vscode";
-import type { DocumentSymbol, Uri } from "vscode";
+import type { DocumentSymbol, SymbolInformation, Uri } from "vscode";
 
 const EXECUTE_DOCUMENT_SYMBOL_PROVIDER = "vscode.executeDocumentSymbolProvider";
+const MAX_CACHE_ENTRIES = 128;
 
 const CLASS_LIKE_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
   vscode.SymbolKind.Class,
@@ -20,7 +20,7 @@ const CLASS_LIKE_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
 const METHOD_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
   vscode.SymbolKind.Method,
   vscode.SymbolKind.Constructor,
-  vscode.SymbolKind.Function
+  vscode.SymbolKind.Function,
 ]);
 
 const FIELD_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
@@ -29,137 +29,258 @@ const FIELD_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
 ]);
 
 interface CachedSymbols {
+  // document cache version -> used to check Consistency
   readonly version: number;
   readonly symbols: DocumentSymbol[];
 }
 
-// 缓存同一文档版本的符号，避免面板/侧栏重复刷新时重复请求语言服务。
 const symbolCache = new Map<string, CachedSymbols>();
+const inFlightRequests = new Map<string, Promise<DocumentSymbol[]>>();
 
 /**
- * delete the symbol cache (document closed)
- * @param uri
+ * Clear symbol cache for one document.
  */
 export function clearSymbolCache(uri: Uri): void {
-  symbolCache.delete(uri.toString());
+  const cacheKey = uri.toString();
+  symbolCache.delete(cacheKey);
+  clearInFlightByPrefix(`${cacheKey}#`);
 }
 
 /**
- * extension closed, clear all cache
+ * Clear every cached/in-flight symbol entry.
  */
 export function clearAllSymbolCache(): void {
   symbolCache.clear();
+  inFlightRequests.clear();
 }
 
 /**
- * 获取文档中的符号列表。
+ * Resolve symbols for a document URI.
  *
- * - 命中缓存：O(1) 直接返回
- * - 未命中：调用 `vscode.executeDocumentSymbolProvider`
+ * Strategy:
+ * - Return LRU cache hit for the same open-document version.
+ * - Deduplicate concurrent requests for the same URI+version.
+ * - Normalize provider output into DocumentSymbol[].
  */
 export async function resolveSymbols(uri: Uri): Promise<DocumentSymbol[]> {
   const cacheKey = uri.toString();
-  const version = getOpenDocumentVersion(uri);
+  const version = getOpenDocumentVersion(cacheKey);
 
   if (version !== undefined) {
-    const cached = symbolCache.get(cacheKey);
-    if (cached?.version === version) {
-      return cached.symbols;
+    const cached = getCachedSymbols(cacheKey, version);
+    if (cached) {
+      return cached;
     }
   }
-  try {
-    const raw = await vscode.commands.executeCommand<unknown>(
-      EXECUTE_DOCUMENT_SYMBOL_PROVIDER,
-      uri,
-    );
-    const symbols = normalizeDocumentSymbols(raw);
-    if (version !== undefined) {
-      symbolCache.set(cacheKey, { version, symbols });
-    }
-    return symbols;
-  } catch (error) {
-    console.error("[SymbolResolver] Failed to resolve symbols:", error);
-    return [];
+
+  const requestKey = `${cacheKey}#${version ?? "untracked"}`;
+  const pending = inFlightRequests.get(requestKey);
+  if (pending) {
+    return pending;
   }
+
+  const request = fetchAndNormalizeSymbols(uri)
+    .then((symbols) => {
+      if (version !== undefined) {
+        setCachedSymbols(cacheKey, version, symbols);
+      }
+      return symbols;
+    })
+    .finally(() => {
+      inFlightRequests.delete(requestKey);
+    });
+
+  inFlightRequests.set(requestKey, request);
+  return request;
 }
 
 /**
- * 容器符号：Class / Interface / Enum
+ * Container kinds: Class / Interface / Enum.
  */
 export function isClassLikeSymbol(symbol: DocumentSymbol): boolean {
   return CLASS_LIKE_KINDS.has(symbol.kind);
 }
 
 /**
- * 可调用成员：Method / Constructor
+ * Callable member kinds: Method / Constructor / Function.
  */
 export function isMethodSymbol(symbol: DocumentSymbol): boolean {
   return METHOD_KINDS.has(symbol.kind);
 }
 
 /**
- * 数据成员：Field / Constant（不含 EnumMember）
+ * Data member kinds: Field / Constant (excludes EnumMember).
  */
 export function isFieldSymbol(symbol: DocumentSymbol): boolean {
   return FIELD_KINDS.has(symbol.kind);
 }
 
 /**
- * 枚举常量：EnumMember
+ * Enum member kind.
  */
 export function isEnumMemberSymbol(symbol: DocumentSymbol): boolean {
   return symbol.kind === vscode.SymbolKind.EnumMember;
 }
 
 /**
- * 构造函数：Constructor
+ * Constructor kind.
  */
 export function isConstructorSymbol(symbol: DocumentSymbol): boolean {
   return symbol.kind === vscode.SymbolKind.Constructor;
 }
 
-/**
- * 遍历工作区中打开的文档，获取对应 URI 的文档版本号。
- *
- * @param uri 目标文档 URI
- * @returns 文档版本号，若文档未打开则返回 undefined
- */
-function getOpenDocumentVersion(uri: Uri): number | undefined {
-  const target = uri.toString();
-  for (const document of vscode.workspace.textDocuments) {
-    if (document.uri.toString() === target) {
-      return document.version;
+function clearInFlightByPrefix(prefix: string): void {
+  for (const key of inFlightRequests.keys()) {
+    if (key.startsWith(prefix)) {
+      inFlightRequests.delete(key);
     }
   }
-  return undefined;
 }
 
-/**
- * 规范化 DocumentSymbol 数组，确保类型安全。
- *
- * @param result 未知类型的符号结果
- * @returns 规范化后的 DocumentSymbol 数组，若不符合预期则返回空数组
- */
+function getCachedSymbols(
+  cacheKey: string,
+  version: number,
+): DocumentSymbol[] | undefined {
+  const cached = symbolCache.get(cacheKey);
+  if (!cached || cached.version !== version) {
+    return undefined;
+  }
+
+  // Promote hit to the end of insertion order (simple LRU behavior).
+  symbolCache.delete(cacheKey);
+  symbolCache.set(cacheKey, cached);
+  return cached.symbols;
+}
+
+function setCachedSymbols(
+  cacheKey: string,
+  version: number,
+  symbols: DocumentSymbol[],
+): void {
+  if (!symbolCache.has(cacheKey) && symbolCache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = symbolCache.keys().next().value;
+    if (typeof oldestKey === "string") {
+      symbolCache.delete(oldestKey);
+    }
+  }
+
+  symbolCache.set(cacheKey, {
+    version,
+    symbols,
+  });
+}
+
+function getOpenDocumentVersion(cacheKey: string): number | undefined {
+  const activeDocument = vscode.window.activeTextEditor?.document;
+  if (activeDocument && activeDocument.uri.toString() === cacheKey) {
+    return activeDocument.version;
+  }
+
+  const document = vscode.workspace.textDocuments.find(
+    (item) => item.uri.toString() === cacheKey,
+  );
+  return document?.version;
+}
+
+async function fetchAndNormalizeSymbols(uri: Uri): Promise<DocumentSymbol[]> {
+  try {
+    const raw = await vscode.commands.executeCommand<unknown>(
+      EXECUTE_DOCUMENT_SYMBOL_PROVIDER,
+      uri,
+    );
+    return normalizeDocumentSymbols(raw);
+  } catch (error) {
+    console.error("[SymbolResolver] Failed to resolve symbols:", error);
+    return [];
+  }
+}
+
 function normalizeDocumentSymbols(result: unknown): DocumentSymbol[] {
   if (!Array.isArray(result) || result.length === 0) {
     return [];
   }
+
   const first = result[0];
-  if (!isDocumentSymbol(first)) {
-    return [];
+  if (isDocumentSymbol(first)) {
+    return result as DocumentSymbol[];
   }
-  return result as DocumentSymbol[];
+
+  if (isSymbolInformation(first)) {
+    return convertSymbolInformationToDocumentSymbols(
+      result as SymbolInformation[],
+    );
+  }
+
+  return [];
 }
 
-/**
- * 判断一个值是否为 DocumentSymbol 类型。
- * @param value 待检查的值
- * @returns 如果值是 DocumentSymbol 类型则返回 true，否则返回 false
- */
+function convertSymbolInformationToDocumentSymbols(
+  symbols: readonly SymbolInformation[],
+): DocumentSymbol[] {
+  return symbols.map((symbol) => {
+    const range = symbol.location.range;
+    return new vscode.DocumentSymbol(
+      symbol.name,
+      symbol.containerName ?? "",
+      symbol.kind,
+      range,
+      range,
+    );
+  });
+}
+
 function isDocumentSymbol(value: unknown): value is DocumentSymbol {
   if (typeof value !== "object" || value === null) {
     return false;
   }
+
   const symbol = value as Partial<DocumentSymbol>;
-  return typeof symbol.kind === "number" && Array.isArray(symbol.children);
+  return (
+    typeof symbol.kind === "number" &&
+    Array.isArray(symbol.children) &&
+    isRange(symbol.range) &&
+    isRange(symbol.selectionRange)
+  );
+}
+
+function isSymbolInformation(value: unknown): value is SymbolInformation {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const symbol = value as Partial<SymbolInformation>;
+  return (
+    typeof symbol.name === "string" &&
+    typeof symbol.kind === "number" &&
+    isLocation(symbol.location)
+  );
+}
+
+function isLocation(value: unknown): value is vscode.Location {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const location = value as Partial<vscode.Location>;
+  return !!location.uri && isRange(location.range);
+}
+
+function isRange(value: unknown): value is vscode.Range {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const range = value as Partial<vscode.Range>;
+  return isPosition(range.start) && isPosition(range.end);
+}
+
+function isPosition(value: unknown): value is vscode.Position {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const position = value as Partial<vscode.Position>;
+  return (
+    typeof position.line === "number" && typeof position.character === "number"
+  );
 }

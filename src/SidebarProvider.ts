@@ -16,6 +16,7 @@
  */
 
 import * as vscode from "vscode";
+import * as path from "path";
 import type {
   WebviewView,
   WebviewViewProvider,
@@ -95,6 +96,11 @@ export class SidebarProvider implements WebviewViewProvider, Disposable {
       return;
     }
 
+    if (doc.languageId === "markdown") {
+      this.refreshMarkdown(doc);
+      return;
+    }
+
     try {
       const classDoc = await this.parser.parse(doc);
       this.currentMethods = classDoc.methods;
@@ -103,6 +109,20 @@ export class SidebarProvider implements WebviewViewProvider, Disposable {
     } catch (error) {
       console.error("[JavaDocSidebar] Parse error:", error);
     }
+  }
+
+  /**
+   * 刷新 Markdown 预览
+   */
+  private refreshMarkdown(document: TextDocument): void {
+    this.currentMethods = [];
+    this.lastHighlightId = null;
+    const content = document.getText();
+    const fileName = path.basename(document.uri.fsPath);
+    this.postMessage({
+      type: "updateMarkdown",
+      payload: { content, fileName },
+    });
   }
 
   /**
