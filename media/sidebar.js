@@ -44,7 +44,12 @@
 
       case 'clearView':
         currentClassDoc = null;
-        renderEmptyState('打开 Java 文件以查看文档');
+        renderEmptyState('打开支持的文件以查看文档');
+        break;
+
+      case 'updateMarkdown':
+        currentClassDoc = null;
+        renderMarkdown(message.payload.content, message.payload.fileName);
         break;
     }
   }
@@ -56,6 +61,21 @@
       <div class="empty-state">
         <div class="empty-state-icon">${getEmptyIcon()}</div>
         <div class="empty-state-text">${escapeHtml(message)}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * Markdown 预览渲染
+   */
+  function renderMarkdown(content, fileName) {
+    const htmlContent = simpleMarkdownToHtml(content);
+    root.innerHTML = `
+      <div class="markdown-view">
+        <div class="markdown-header">
+          <div class="markdown-file-name">${escapeHtml(fileName)}</div>
+        </div>
+        <div class="markdown-body">${htmlContent}</div>
       </div>
     `;
   }
@@ -256,6 +276,14 @@
     if (method.hasComment) {
       if (method.description) {
         contentHtml += `<div class="method-description">${escapeHtml(method.description)}</div>`;
+      }
+
+      if (method.tags.doc) {
+        contentHtml += renderDocSection(method.tags.doc);
+      }
+
+      if (method.tags.example) {
+        contentHtml += renderExampleSection(method.tags.example);
       }
 
       if (method.tags.deprecated) {
@@ -574,6 +602,160 @@
     }
   }
 
+  // ========== @doc 渲染 ==========
+
+  function renderDocSection(docContent) {
+    if (!docContent) return '';
+    return `
+      <div class="doc-section">
+        <div class="doc-section-header">
+          ${getBookIcon()}
+          <span class="doc-section-title">设计原理 @doc</span>
+        </div>
+        <div class="doc-section-content">${escapeHtml(docContent)}</div>
+      </div>
+    `;
+  }
+
+  function renderExampleSection(exampleContent) {
+    if (!exampleContent) return '';
+    return `
+      <div class="example-section">
+        <div class="example-section-header">
+          ${getCodeIcon()}
+          <span class="example-section-title">示例 @example</span>
+        </div>
+        <pre class="example-section-content"><code>${escapeHtml(exampleContent)}</code></pre>
+      </div>
+    `;
+  }
+
+  // ========== Markdown 渲染 ==========
+
+  function simpleMarkdownToHtml(text) {
+    if (!text) return '';
+
+    let html = text.replace(/\r\n/g, '\n');
+
+    // 代码块（必须在行内规则之前处理）
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function (_, lang, code) {
+      return '\n<pre class="md-code-block"><code>' + escapeHtml(code.trimEnd()) + '</code></pre>\n';
+    });
+
+    const lines = html.split('\n');
+    const result = [];
+    let inList = false;
+    let listType = '';
+    let inBlockquote = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // 跳过已处理的代码块标签
+      if (line.startsWith('<pre class="md-code-block">') || line === '</pre>') {
+        if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+        if (inBlockquote) { result.push('</blockquote>'); inBlockquote = false; }
+        result.push(line);
+        continue;
+      }
+
+      // 水平线
+      if (/^(\*{3,}|-{3,}|_{3,})\s*$/.test(line)) {
+        if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+        if (inBlockquote) { result.push('</blockquote>'); inBlockquote = false; }
+        result.push('<hr>');
+        continue;
+      }
+
+      // 标题
+      const headingMatch = /^(#{1,6})\s+(.+)$/.exec(line);
+      if (headingMatch) {
+        if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+        if (inBlockquote) { result.push('</blockquote>'); inBlockquote = false; }
+        const level = headingMatch[1].length;
+        result.push('<h' + level + ' class="md-heading">' + applyInline(headingMatch[2]) + '</h' + level + '>');
+        continue;
+      }
+
+      // 引用
+      const bqMatch = /^>\s?(.*)$/.exec(line);
+      if (bqMatch) {
+        if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false; }
+        if (!inBlockquote) { result.push('<blockquote class="md-blockquote">'); inBlockquote = true; }
+        result.push('<p>' + applyInline(bqMatch[1]) + '</p>');
+        continue;
+      } else if (inBlockquote) {
+        result.push('</blockquote>');
+        inBlockquote = false;
+      }
+
+      // 无序列表
+      const ulMatch = /^[\s]*[-*+]\s+(.+)$/.exec(line);
+      if (ulMatch) {
+        if (!inList || listType !== 'ul') {
+          if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+          result.push('<ul class="md-list">');
+          inList = true;
+          listType = 'ul';
+        }
+        result.push('<li>' + applyInline(ulMatch[1]) + '</li>');
+        continue;
+      }
+
+      // 有序列表
+      const olMatch = /^[\s]*\d+\.\s+(.+)$/.exec(line);
+      if (olMatch) {
+        if (!inList || listType !== 'ol') {
+          if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+          result.push('<ol class="md-list">');
+          inList = true;
+          listType = 'ol';
+        }
+        result.push('<li>' + applyInline(olMatch[1]) + '</li>');
+        continue;
+      }
+
+      // 关闭列表
+      if (inList) {
+        result.push(listType === 'ul' ? '</ul>' : '</ol>');
+        inList = false;
+      }
+
+      // 空行
+      if (line.trim() === '') {
+        result.push('');
+        continue;
+      }
+
+      // 普通段落
+      result.push('<p>' + applyInline(line) + '</p>');
+    }
+
+    if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>');
+    if (inBlockquote) result.push('</blockquote>');
+
+    return result.join('\n');
+  }
+
+  /**
+   * 行内 Markdown 格式：粗体、斜体、行内代码、链接、图片
+   */
+  function applyInline(text) {
+    // 行内代码（最先处理，防止内部被其他规则匹配）
+    text = text.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>');
+    // 图片
+    text = text.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img alt="$1" src="$2" class="md-image">');
+    // 链接
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a class="md-link">$1</a>');
+    // 粗斜体
+    text = text.replace(/(\*{3}|_{3})(?=\S)([\s\S]*?\S)\1/g, '<strong><em>$2</em></strong>');
+    // 粗体
+    text = text.replace(/(\*{2}|_{2})(?=\S)([\s\S]*?\S)\1/g, '<strong>$2</strong>');
+    // 斜体
+    text = text.replace(/(\*|_)(?=\S)([\s\S]*?\S)\1/g, '<em>$2</em>');
+    return text;
+  }
+
   // ========== 工具函数 ==========
 
   function getFirstLine(text) {
@@ -652,6 +834,20 @@
   }
 
   // ========== SVG 图标 ==========
+
+  function getBookIcon() {
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+    </svg>`;
+  }
+
+  function getCodeIcon() {
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="16 18 22 12 16 6"></polyline>
+      <polyline points="8 6 2 12 8 18"></polyline>
+    </svg>`;
+  }
 
   // 构造函数图标 — 齿轮/扳手风格，表示"构建"
   function getConstructorIcon() {

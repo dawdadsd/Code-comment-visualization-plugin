@@ -89,6 +89,8 @@ export interface TagTable {
   readonly author: string | null;
   readonly deprecated: string | null;
   readonly see: readonly string[];
+  readonly doc: string | null;
+  readonly example: string | null;
 }
 
 /**
@@ -151,7 +153,11 @@ export interface ClassDoc {
 export type DownstreamMessage =
   | { readonly type: "updateView"; readonly payload: ClassDoc }
   | { readonly type: "highlightMethod"; readonly payload: { id: MethodId } }
-  | { readonly type: "clearView" };
+  | { readonly type: "clearView" }
+  | {
+      readonly type: "updateMarkdown";
+      readonly payload: { content: string; fileName: string };
+    };
 
 /**
  * 字段文档 - 普通字段和常量的信息
@@ -244,12 +250,17 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   maxMethods: 200,
 } as const satisfies ExtensionConfig;
 
-export type SupportedLanguageId = "java" | "typescript" | "javascript";
+export type SupportedLanguageId =
+  | "java"
+  | "typescript"
+  | "javascript"
+  | "markdown";
 
 const SUPPORTED_LANGUAGE_IDS: Set<string> = new Set([
   "java",
   "typescript",
   "javascript",
+  "markdown",
 ]);
 
 export function isSupportedLanguage(

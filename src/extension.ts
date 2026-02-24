@@ -114,7 +114,7 @@ function createEditorChangeListener(provider: SidebarProvider): Disposable {
 function createSelectionListener(provider: SidebarProvider): Disposable {
   return vscode.window.onDidChangeTextEditorSelection((event) => {
     const languageId = event.textEditor.document.languageId;
-    if (isSupportedLanguage(languageId)) {
+    if (isSupportedLanguage(languageId) && languageId !== "markdown") {
       const line = event.selections[0]?.active.line ?? 0;
       provider.handleSelectionChange(line);
     }

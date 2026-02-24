@@ -674,6 +674,83 @@ body {
   text-decoration: line-through;
 }
 
+/* ========== @doc 设计原理 ========== */
+.doc-section {
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  border-radius: 0 4px 4px 0;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.doc-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.doc-section-header svg {
+  color: var(--vscode-textLink-foreground);
+  opacity: 0.85;
+}
+
+.doc-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.doc-section-content {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vscode-foreground);
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+/* ========== @example 示例 ========== */
+.example-section {
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.example-section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.example-section-header svg {
+  color: var(--vscode-symbolIcon-colorForeground, #e5c07b);
+  opacity: 0.85;
+}
+
+.example-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--vscode-descriptionForeground);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.example-section-content {
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size, 12px);
+  line-height: 1.5;
+  color: var(--vscode-foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  overflow-x: auto;
+}
+
 /* ========== 类分隔线 ========== */
 .class-separator {
   display: flex;
@@ -711,4 +788,134 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--vscode-scrollbarSlider-hoverBackground);
+}
+
+/* ========== Markdown 预览 ========== */
+.markdown-view {
+  padding: 0;
+}
+
+.markdown-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  margin-bottom: 12px;
+}
+
+.markdown-file-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground);
+}
+
+.markdown-body {
+  padding: 0 8px 16px 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--vscode-foreground);
+  word-break: break-word;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: var(--vscode-foreground);
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.markdown-body h1 {
+  font-size: 20px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  padding-bottom: 6px;
+}
+
+.markdown-body h2 {
+  font-size: 17px;
+  border-bottom: 1px solid var(--vscode-widget-border);
+  padding-bottom: 4px;
+}
+
+.markdown-body h3 { font-size: 15px; }
+.markdown-body h4 { font-size: 14px; }
+.markdown-body h5 { font-size: 13px; }
+
+.markdown-body h6 {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.markdown-body p {
+  margin: 0 0 10px 0;
+}
+
+.markdown-body hr {
+  border: none;
+  border-top: 1px solid var(--vscode-widget-border);
+  margin: 16px 0;
+}
+
+.markdown-body .md-code-block {
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: var(--vscode-editor-font-family);
+  font-size: var(--vscode-editor-font-size, 12px);
+  line-height: 1.5;
+}
+
+.markdown-body .md-inline-code {
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.9em;
+}
+
+.markdown-body .md-blockquote {
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  padding: 4px 12px;
+  margin: 8px 0;
+  color: var(--vscode-descriptionForeground);
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+  border-radius: 0 4px 4px 0;
+}
+
+.markdown-body .md-list {
+  padding-left: 24px;
+  margin: 6px 0;
+}
+
+.markdown-body .md-list li {
+  margin: 3px 0;
+}
+
+.markdown-body .md-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: none;
+}
+
+.markdown-body .md-link:hover {
+  text-decoration: underline;
+}
+
+.markdown-body .md-image {
+  max-width: 100%;
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.markdown-body strong {
+  font-weight: 600;
+}
+
+.markdown-body em {
+  font-style: italic;
 }
