@@ -21,7 +21,8 @@ type SupportedTag =
   | "author"
   | "deprecated"
   | "see"
-  | "doc";
+  | "doc"
+  | "example";
 
 interface ParsedTagBlock {
   readonly tag: SupportedTag;
@@ -32,7 +33,7 @@ interface ParsedTagBlock {
  * Regex pattern to identify Javadoc tag lines.
  */
 const TAG_LINE_PATTERN =
-  /^\s*\*?\s*@(?<tag>param|return|returns|throws|exception|since|author|deprecated|see|doc)\b\s*(?<content>.*)$/i;
+  /^\s*\*?\s*@(?<tag>param|return|returns|throws|exception|since|author|deprecated|see|doc|example)\b\s*(?<content>.*)$/i;
 
 /**
  * 参数前可忽略的修饰符集合
@@ -73,6 +74,7 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
   let author: string | null = null;
   let deprecated: string | null = null;
   let doc: string | null = null;
+  let example: string | null = null;
 
   for (const block of blocks) {
     const content = block.content.trim();
@@ -128,6 +130,10 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
       case "doc":
         doc = content || null;
         break;
+
+      case "example":
+        example = content || null;
+        break;
     }
   }
 
@@ -140,6 +146,7 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
     deprecated,
     see: seeTags,
     doc,
+    example,
   };
 }
 
@@ -157,6 +164,7 @@ export function createEmptyTagTable(): TagTable {
     deprecated: null,
     see: [],
     doc: null,
+    example: null,
   };
 }
 
@@ -223,6 +231,7 @@ function isSupportedTag(value: string): value is SupportedTag {
     case "deprecated":
     case "see":
     case "doc":
+    case "example":
       return true;
     default:
       return false;

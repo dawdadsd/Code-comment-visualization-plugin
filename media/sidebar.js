@@ -282,6 +282,10 @@
         contentHtml += renderDocSection(method.tags.doc);
       }
 
+      if (method.tags.example) {
+        contentHtml += renderExampleSection(method.tags.example);
+      }
+
       if (method.tags.deprecated) {
         contentHtml += `
           <div class="deprecated-tag">
@@ -613,6 +617,19 @@
     `;
   }
 
+  function renderExampleSection(exampleContent) {
+    if (!exampleContent) return '';
+    return `
+      <div class="example-section">
+        <div class="example-section-header">
+          ${getCodeIcon()}
+          <span class="example-section-title">示例 @example</span>
+        </div>
+        <pre class="example-section-content"><code>${escapeHtml(exampleContent)}</code></pre>
+      </div>
+    `;
+  }
+
   // ========== Markdown 渲染 ==========
 
   function simpleMarkdownToHtml(text) {
@@ -822,6 +839,13 @@
     return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+    </svg>`;
+  }
+
+  function getCodeIcon() {
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="16 18 22 12 16 6"></polyline>
+      <polyline points="8 6 2 12 8 18"></polyline>
     </svg>`;
   }
 

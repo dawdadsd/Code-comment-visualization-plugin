@@ -90,6 +90,7 @@ export interface TagTable {
   readonly deprecated: string | null;
   readonly see: readonly string[];
   readonly doc: string | null;
+  readonly example: string | null;
 }
 
 /**
