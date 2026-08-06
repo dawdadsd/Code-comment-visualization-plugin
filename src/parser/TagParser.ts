@@ -9,7 +9,17 @@
  * - Line-based tokenization is safer than regex split when descriptions contain "@xxx" text.
  */
 
-import type { ParamTag, ReturnTag, TagTable, ThrowsTag } from "../types.js";
+import type {
+  ParamTag,
+  ReturnTag,
+  TagTable,
+  ThrowsTag,
+  TypeTag,
+  TypeDefTag,
+  PropertyTag,
+  YieldsTag,
+  EventTag,
+} from "../types.js";
 
 type SupportedTag =
   | "param"
@@ -22,7 +32,25 @@ type SupportedTag =
   | "deprecated"
   | "see"
   | "doc"
-  | "example";
+  | "example"
+  // JSDoc 扩展标签
+  | "type"
+  | "typedef"
+  | "property"
+  | "prop"
+  | "template"
+  | "yields"
+  | "yield"
+  | "summary"
+  | "description"
+  | "desc"
+  | "todo"
+  | "emits"
+  | "fires"
+  | "listens"
+  | "readonly"
+  | "async"
+  | "override";
 
 interface ParsedTagBlock {
   readonly tag: SupportedTag;
@@ -30,10 +58,10 @@ interface ParsedTagBlock {
 }
 
 /**
- * Regex pattern to identify Javadoc tag lines.
+ * Regex pattern to identify Javadoc/JSDoc tag lines.
  */
 const TAG_LINE_PATTERN =
-  /^\s*\*?\s*@(?<tag>param|return|returns|throws|exception|since|author|deprecated|see|doc|example)\b\s*(?<content>.*)$/i;
+  /^\s*\*?\s*@(?<tag>param|return|returns|throws|exception|since|author|deprecated|see|doc|example|type|typedef|property|prop|template|yields|yield|summary|description|desc|todo|emits|fires|listens|readonly|async|override)\b\s*(?<content>.*)$/i;
 
 /**
  * 参数前可忽略的修饰符集合
@@ -68,6 +96,12 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
   const params: ParamTag[] = [];
   const throwsTags: ThrowsTag[] = [];
   const seeTags: string[] = [];
+  const properties: PropertyTag[] = [];
+  const templateTags: string[] = [];
+  const todoTags: string[] = [];
+  const emitsTags: EventTag[] = [];
+  const listensTags: EventTag[] = [];
+  const modifiers: string[] = [];
 
   let returnTag: ReturnTag | null = null;
   let since: string | null = null;
@@ -75,6 +109,11 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
   let deprecated: string | null = null;
   let doc: string | null = null;
   let example: string | null = null;
+  let typeTag: TypeTag | null = null;
+  let typedefTag: TypeDefTag | null = null;
+  let yieldsTag: YieldsTag | null = null;
+  let summary: string | null = null;
+  let descriptionTag: string | null = null;
 
   for (const block of blocks) {
     const content = block.content.trim();
@@ -90,8 +129,14 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
 
       case "return":
       case "returns": {
-        // Constructors resolve to "void" in this parser, so @return is ignored there.
-        if (returnType !== "void") {
+        // JSDoc {type} 语法优先
+        const jsdocType = extractJSDocType(content);
+        if (jsdocType) {
+          returnTag = {
+            type: jsdocType.type,
+            description: jsdocType.rest,
+          };
+        } else if (returnType !== "void") {
           returnTag = {
             type: returnType,
             description: content,
@@ -134,6 +179,114 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
       case "example":
         example = content || null;
         break;
+
+      // ---- JSDoc 扩展标签 ----
+
+      case "type": {
+        const jsdocType = extractJSDocType(content);
+        typeTag = {
+          type: jsdocType?.type ?? content,
+          description: jsdocType?.rest ?? "",
+        };
+        break;
+      }
+
+      case "typedef": {
+        // @typedef {Object} Name description
+        const jsdocType = extractJSDocType(content);
+        const rest = jsdocType?.rest ?? content;
+        const nameMatch = /^(\S+)\s*(.*)$/.exec(rest);
+        typedefTag = {
+          name: nameMatch?.[1] ?? "",
+          type: jsdocType?.type ?? "",
+          description: nameMatch?.[2]?.trim() ?? "",
+        };
+        break;
+      }
+
+      case "property":
+      case "prop": {
+        // @property {string} name - description
+        const jsdocType = extractJSDocType(content);
+        const rest = jsdocType?.rest ?? content;
+        const propMatch = /^(\S+)\s*(?:-\s*)?(.*)$/.exec(rest);
+        if (propMatch) {
+          properties.push({
+            name: propMatch[1] ?? "",
+            type: jsdocType?.type ?? "unknown",
+            description: propMatch[2]?.trim() ?? "",
+          });
+        }
+        break;
+      }
+
+      case "template": {
+        // @template T, U
+        const names = content.split(/[,,\s]+/).filter((s) => s.length > 0);
+        templateTags.push(...names);
+        break;
+      }
+
+      case "yields":
+      case "yield": {
+        const jsdocType = extractJSDocType(content);
+        yieldsTag = {
+          type: jsdocType?.type ?? "unknown",
+          description: jsdocType?.rest ?? content,
+        };
+        break;
+      }
+
+      case "summary":
+        summary = content || null;
+        break;
+
+      case "description":
+      case "desc":
+        descriptionTag = content || null;
+        break;
+
+      case "todo":
+        if (content) {
+          todoTags.push(content);
+        }
+        break;
+
+      case "emits":
+      case "fires": {
+        // @emits EventName description
+        const match = /^(\S+)\s*(.*)$/.exec(content);
+        if (match) {
+          emitsTags.push({
+            name: match[1] ?? "",
+            description: match[2]?.trim() ?? "",
+          });
+        }
+        break;
+      }
+
+      case "listens": {
+        const match = /^(\S+)\s*(.*)$/.exec(content);
+        if (match) {
+          listensTags.push({
+            name: match[1] ?? "",
+            description: match[2]?.trim() ?? "",
+          });
+        }
+        break;
+      }
+
+      case "readonly":
+        modifiers.push("readonly");
+        break;
+
+      case "async":
+        modifiers.push("async");
+        break;
+
+      case "override":
+        modifiers.push("override");
+        break;
     }
   }
 
@@ -147,6 +300,18 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
     see: seeTags,
     doc,
     example,
+    // JSDoc 扩展
+    type: typeTag,
+    typedef: typedefTag,
+    properties,
+    template: templateTags,
+    yields: yieldsTag,
+    summary,
+    description: descriptionTag,
+    todo: todoTags,
+    emits: emitsTags,
+    listens: listensTags,
+    modifiers,
   };
 }
 
@@ -165,6 +330,18 @@ export function createEmptyTagTable(): TagTable {
     see: [],
     doc: null,
     example: null,
+    // JSDoc 扩展
+    type: null,
+    typedef: null,
+    properties: [],
+    template: [],
+    yields: null,
+    summary: null,
+    description: null,
+    todo: [],
+    emits: [],
+    listens: [],
+    modifiers: [],
   };
 }
 
@@ -232,6 +409,24 @@ function isSupportedTag(value: string): value is SupportedTag {
     case "see":
     case "doc":
     case "example":
+    // JSDoc 扩展标签
+    case "type":
+    case "typedef":
+    case "property":
+    case "prop":
+    case "template":
+    case "yields":
+    case "yield":
+    case "summary":
+    case "description":
+    case "desc":
+    case "todo":
+    case "emits":
+    case "fires":
+    case "listens":
+    case "readonly":
+    case "async":
+    case "override":
       return true;
     default:
       return false;
@@ -242,24 +437,60 @@ function isSupportedTag(value: string): value is SupportedTag {
  * Purpose: Parse one @param block.
  * Why: Supports both regular parameters and generic type parameters (@param <T> ...).
  */
+/**
+ * 从 JSDoc 标签内容中提取 {type} 语法
+ *
+ * @example
+ *   "{string} name - desc" → { type: "string", rest: "name - desc" }
+ *   "{Array<number>} items" → { type: "Array<number>", rest: "items" }
+ *   "name - desc" → null (无 JSDoc 类型语法)
+ */
+function extractJSDocType(
+  content: string,
+): { type: string; rest: string } | null {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{")) return null;
+
+  let depth = 0;
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i];
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) {
+        const type = trimmed.substring(1, i).trim();
+        const rest = trimmed.substring(i + 1).trim();
+        return type ? { type, rest } : null;
+      }
+    }
+  }
+  return null;
+}
+
 function parseParamTag(
   content: string,
   paramTypes: ReadonlyMap<string, string>,
 ): ParamTag | null {
+  // JSDoc {type} 语法优先：@param {string} name - description
+  const jsdocType = extractJSDocType(content);
+  const effectiveContent = jsdocType?.rest ?? content;
+  const jsdocTypeStr = jsdocType?.type;
+
   const match = /^(<\s*[A-Za-z_$][\w$]*\s*>|[A-Za-z_$][\w$]*)\s*(.*)$/s.exec(
-    content,
+    effectiveContent,
   );
   if (!match) {
     return null;
   }
 
   const rawName = (match[1] ?? "").replace(/\s+/g, "");
-  const description = (match[2] ?? "").trim();
+  // 去掉 JSDoc 描述前导连字符：name - description → description
+  const description = (match[2] ?? "").replace(/^\s*-\s*/, "").trim();
 
   const isTypeParameter = rawName.startsWith("<") && rawName.endsWith(">");
   const type = isTypeParameter
     ? "type-parameter"
-    : (paramTypes.get(rawName) ?? "unknown");
+    : (jsdocTypeStr ?? paramTypes.get(rawName) ?? "unknown");
 
   return {
     name: rawName,

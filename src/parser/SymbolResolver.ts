@@ -15,17 +15,21 @@ const CLASS_LIKE_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
   vscode.SymbolKind.Class,
   vscode.SymbolKind.Interface,
   vscode.SymbolKind.Enum,
+  vscode.SymbolKind.Struct,
 ]);
 
 const METHOD_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
   vscode.SymbolKind.Method,
   vscode.SymbolKind.Constructor,
   vscode.SymbolKind.Function,
+  vscode.SymbolKind.Operator,
 ]);
 
 const FIELD_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
   vscode.SymbolKind.Field,
   vscode.SymbolKind.Constant,
+  vscode.SymbolKind.Property,
+  vscode.SymbolKind.Event,
 ]);
 
 interface CachedSymbols {
@@ -81,7 +85,11 @@ export async function resolveSymbols(uri: Uri): Promise<DocumentSymbol[]> {
 
   const request = fetchAndNormalizeSymbols(uri)
     .then((symbols) => {
-      if (version !== undefined) {
+      // Only cache non-empty results. TS/JS language server may return []
+      // on the first request for a JSX/JS file while it is still analyzing
+      // the document; caching that empty result would suppress subsequent
+      // refreshes until the document version changes.
+      if (version !== undefined && symbols.length > 0) {
         setCachedSymbols(cacheKey, version, symbols);
       }
       return symbols;
@@ -102,17 +110,49 @@ export function isClassLikeSymbol(symbol: DocumentSymbol): boolean {
 }
 
 /**
- * Callable member kinds: Method / Constructor / Function.
+ * Whether a Variable symbol holds a function (arrow function / function
+ * expression).
+ *
+ * TS/JS language server reports `const f = () => {}` as SymbolKind.Variable
+ * (not Function). Two detection paths:
+ *   1. TS/TSX with type inference: `detail` contains the function signature
+ *      (e.g. "(...args) => void"), so we check for "=>".
+ *   2. JS/JSX without type inference: `detail` is empty. We fall back to
+ *      `children.length > 0` because a function body yields child symbols
+ *      (statements, nested declarations), while a plain value binding does
+ *      not. This routes React components / hooks and plain JS arrow-function
+ *      exports into methods so they are surfaced as callable members.
  */
-export function isMethodSymbol(symbol: DocumentSymbol): boolean {
-  return METHOD_KINDS.has(symbol.kind);
+function isFunctionVariableSymbol(symbol: DocumentSymbol): boolean {
+  if (symbol.kind !== vscode.SymbolKind.Variable) {
+    return false;
+  }
+  if (symbol.detail.includes("=>")) {
+    return true;
+  }
+  // JS/JSX fallback: function bodies produce child symbols, value bindings do not.
+  return symbol.detail === "" && symbol.children.length > 0;
 }
 
 /**
- * Data member kinds: Field / Constant (excludes EnumMember).
+ * Callable member kinds: Method / Constructor / Function, plus function-typed
+ * Variables (arrow function / function expression assignments in JS/TS).
+ */
+export function isMethodSymbol(symbol: DocumentSymbol): boolean {
+  return METHOD_KINDS.has(symbol.kind) || isFunctionVariableSymbol(symbol);
+}
+
+/**
+ * Data member kinds: Field / Constant (excludes EnumMember), plus non-function
+ * Variables (value bindings in JS/TS). Mutually exclusive with isMethodSymbol:
+ * a function-typed Variable is treated as a method, never a field.
  */
 export function isFieldSymbol(symbol: DocumentSymbol): boolean {
-  return FIELD_KINDS.has(symbol.kind);
+  return (
+    FIELD_KINDS.has(symbol.kind) ||
+    (symbol.kind === vscode.SymbolKind.Variable &&
+      !isFunctionVariableSymbol(symbol))
+  );
 }
 
 /**

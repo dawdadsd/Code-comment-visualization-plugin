@@ -1,1 +1,12 @@
 node_modules
+
+# 构建产物
+out/
+*.vsix
+
+# 调试产物
+.dbg/
+debug-*.md
+
+# 系统
+.DS_Store

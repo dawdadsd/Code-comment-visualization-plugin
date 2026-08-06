@@ -33,38 +33,69 @@ body {
 }
 
 /* ========== 锁定栏 ========== */
-#lock-bar {
+/* ========== 顶部常驻 Header ========== */
+#sticky-header {
   position: sticky;
   top: 0;
   z-index: 100;
   display: flex;
-  justify-content: flex-end;
-  padding: 3px 6px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  min-height: 35px;
   background-color: var(--vscode-sideBar-background);
+  border-bottom: 1px solid var(--vscode-widget-border);
 }
 
-.lock-btn {
+.sticky-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sticky-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sticky-actions .view-toggle,
+.sticky-actions .lock-btn {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 4px;
-  padding: 3px 5px;
+  padding: 4px 6px;
   cursor: pointer;
   color: var(--vscode-foreground);
-  opacity: 0.45;
+  opacity: 0.55;
   display: flex;
   align-items: center;
   justify-content: center;
   line-height: 0;
-  transition: opacity 0.15s, background 0.15s;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
 }
 
-.lock-btn:hover {
+.sticky-actions .view-toggle:hover,
+.sticky-actions .lock-btn:hover {
   opacity: 1;
   background: var(--vscode-button-secondaryBackground);
   border-color: var(--vscode-widget-border);
 }
 
-.lock-btn-active {
+.sticky-actions .view-toggle svg,
+.sticky-actions .lock-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.sticky-actions .lock-btn-active {
   opacity: 1;
   color: var(--vscode-textLink-foreground);
   border-color: var(--vscode-textLink-foreground) !important;
@@ -127,11 +158,31 @@ body {
 }
 
 .class-comment {
-  font-size: 12px;
-  color: var(--vscode-foreground);
-  opacity: 0.85;
-  white-space: pre-line;
   margin-top: 8px;
+  padding: 10px 12px;
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));
+  border-left: 3px solid var(--vscode-textLink-foreground);
+  border-radius: 0 6px 6px 0;
+}
+
+.class-description {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vscode-foreground);
+  word-break: break-word;
+}
+
+/* 类注释容器内子元素统一间距，避免各标签自带 margin 叠加 */
+.class-comment > * {
+  margin-bottom: 10px;
+}
+
+.class-comment > *:last-child {
+  margin-bottom: 0;
+}
+
+.class-comment > .jsdoc-summary {
+  margin-bottom: 6px;
 }
 
 /* ========== 作者信息 ========== */
@@ -203,12 +254,12 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  margin-top: 14px;
 }
 
 .member-group {
   border: 1px solid var(--vscode-widget-border);
   border-radius: 6px;
-  overflow: hidden;
 }
 
 .group-header {
@@ -216,11 +267,21 @@ body {
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
+  min-height: 35px;
   cursor: pointer;
   user-select: none;
-  background: var(--vscode-editor-lineHighlightBackground);
+  background: var(--vscode-editor-background);
   border-bottom: 1px solid var(--vscode-widget-border);
+  border-radius: 5px 5px 0 0;
   transition: background-color 0.1s ease;
+  position: sticky;
+  top: 35px;
+  z-index: 20;
+}
+
+/* 分组头部在类型组内 → 驻留在类型组头部下方 */
+.type-group-content .group-header {
+  top: 75px;
 }
 
 .group-header:hover {
@@ -253,6 +314,7 @@ body {
 
 .member-group.collapsed .group-header {
   border-bottom: none;
+  border-radius: 5px;
 }
 
 .group-icon {
@@ -289,7 +351,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px;
+  padding: 0 6px 6px;
 }
 
 .group-content.compact-mode {
@@ -368,20 +430,11 @@ body {
 }
 
 .meta-value.type-value {
-  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+  color: var(--vscode-symbolIcon-classForeground);
 }
 
 .meta-value.params-value {
-  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
-}
-
-.method-access {
-  font-size: 9px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background-color: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  opacity: 0.8;
+  color: var(--vscode-symbolIcon-variableForeground);
 }
 
 .method-desc-preview {
@@ -395,26 +448,13 @@ body {
   text-overflow: ellipsis;
 }
 
-.method-desc-preview.no-doc {
-  font-style: italic;
-  opacity: 0.6;
-}
-
-.method-item.compact.no-comment {
-  opacity: 0.6;
-}
-
-.method-item.compact.no-comment .method-name {
-  font-style: italic;
-}
-
 /* ========== 详细模式样式 ========== */
 .method-item.detail {
   background-color: var(--vscode-editor-background);
   border: 1px solid var(--vscode-widget-border);
   border-radius: 4px;
-  overflow: hidden;
   transition: border-color 0.15s ease;
+  cursor: pointer;
 }
 
 .method-item.detail:hover {
@@ -422,16 +462,8 @@ body {
 }
 
 .method-item.detail.active {
-  border-left: 3px solid var(--vscode-textLink-foreground);
+  box-shadow: inset 3px 0 0 var(--vscode-textLink-foreground);
   background-color: var(--vscode-list-activeSelectionBackground);
-}
-
-.method-item.detail.no-comment {
-  opacity: 0.7;
-}
-
-.method-item.detail.no-comment .method-name {
-  font-style: italic;
 }
 
 .method-header {
@@ -444,6 +476,28 @@ body {
 
 .method-header:hover {
   background-color: var(--vscode-list-hoverBackground);
+}
+
+/* 展开的方法头部驻留显示 —— 滚动时固定在分组头部下方 */
+.method-item.detail:not(.collapsed) .method-header {
+  position: sticky;
+  top: 70px;
+  z-index: 10;
+  background-color: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-widget-border);
+  border-radius: 3px 3px 0 0;
+}
+
+/* 焦点卡片头部高亮 —— 与卡片体保持一致（含左边缘色条） */
+.method-item.detail.active .method-header,
+.method-item.detail.active:not(.collapsed) .method-header {
+  background-color: var(--vscode-list-activeSelectionBackground);
+  box-shadow: inset 3px 0 0 var(--vscode-textLink-foreground);
+}
+
+/* 方法头部在类型组内 → 驻留在类型组头部 + 分组头部下方 */
+.type-group-content .method-item.detail:not(.collapsed) .method-header {
+  top: 110px;
 }
 
 .collapse-icon {
@@ -506,12 +560,12 @@ body {
 
 .detail-type {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+  color: var(--vscode-symbolIcon-classForeground);
 }
 
 .detail-params {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
+  color: var(--vscode-symbolIcon-variableForeground);
 }
 
 .method-signature {
@@ -540,12 +594,6 @@ body {
   display: none;
 }
 
-.no-comment-hint {
-  color: var(--vscode-disabledForeground);
-  font-style: italic;
-  font-size: 12px;
-}
-
 .method-description {
   margin-bottom: 12px;
   font-size: 13px;
@@ -568,8 +616,9 @@ body {
   background-color: var(--vscode-list-hoverBackground);
 }
 
-.field-item.no-comment {
-  opacity: 0.6;
+.field-item.active {
+  box-shadow: inset 3px 0 0 var(--vscode-textLink-foreground);
+  background-color: var(--vscode-list-activeSelectionBackground);
 }
 
 .field-header {
@@ -582,18 +631,18 @@ body {
 .field-name {
   font-weight: 600;
   font-size: 12px;
-  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
+  color: var(--vscode-symbolIcon-variableForeground);
   font-family: var(--vscode-editor-font-family);
 }
 
 .field-name.enum-name {
-  color: var(--vscode-symbolIcon-enumeratorForeground, #d4d4d4);
+  color: var(--vscode-symbolIcon-enumeratorForeground);
   text-transform: none;
 }
 
 .field-type {
   font-size: 11px;
-  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+  color: var(--vscode-symbolIcon-classForeground);
   font-family: var(--vscode-editor-font-family);
 }
 
@@ -601,8 +650,8 @@ body {
   font-size: 9px;
   padding: 0 4px;
   border-radius: 2px;
-  background: var(--vscode-inputValidation-infoBorder);
-  color: var(--vscode-editor-background);
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
   font-weight: 600;
   letter-spacing: 0.3px;
 }
@@ -622,15 +671,24 @@ body {
   text-overflow: ellipsis;
 }
 
-.field-description.no-doc {
-  font-style: italic;
-  opacity: 0.6;
+/* 字段 JSDoc 标签区（@deprecated/@todo/@see 等） */
+.field-tags {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.field-tags > * {
+  margin-bottom: 6px;
+}
+
+.field-tags > *:last-child {
+  margin-bottom: 0;
 }
 
 /* 枚举常量：微妙的视觉区分 */
 .field-item.enum-constant {
   border-left: 2px solid
-    var(--vscode-symbolIcon-enumeratorMemberForeground, #75beff);
+    var(--vscode-symbolIcon-enumeratorMemberForeground);
 }
 
 /* ========== 标签表格 ========== */
@@ -657,6 +715,11 @@ body {
   font-size: 12px;
 }
 
+/* 表格横向滚动容器 —— 防止过长内容撑破布局 */
+.table-wrapper {
+  overflow-x: auto;
+}
+
 .tag-table th,
 .tag-table td {
   text-align: left;
@@ -676,13 +739,13 @@ body {
 
 .tag-table .type-cell {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+  color: var(--vscode-symbolIcon-classForeground);
   white-space: nowrap;
 }
 
 .tag-table .name-cell {
   font-family: var(--vscode-editor-font-family);
-  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe);
+  color: var(--vscode-symbolIcon-variableForeground);
   white-space: nowrap;
 }
 
@@ -711,6 +774,232 @@ body {
 
 .deprecated-tag .method-name {
   text-decoration: line-through;
+}
+
+/* ========== JSDoc 扩展标签样式 ========== */
+
+/* @summary 短摘要 — 强调首行 */
+.jsdoc-summary {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  margin-bottom: 8px;
+  padding-left: 6px;
+  border-left: 2px solid var(--vscode-textLink-foreground);
+}
+
+/* @description 长描述 — 引用块样式 */
+.jsdoc-description {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 10px;
+  padding: 6px 10px;
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));
+  border-radius: 4px;
+}
+
+/* 修饰符徽章 @readonly / @async / @override */
+.modifier-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.modifier-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background-color: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+}
+
+.modifier-readonly {
+  background-color: var(--vscode-inputValidation-infoBackground);
+  color: var(--vscode-inputValidation-infoForeground, var(--vscode-badge-foreground));
+  border: 1px solid var(--vscode-inputValidation-infoBorder);
+}
+
+.modifier-async {
+  background-color: var(--vscode-inputValidation-infoBackground);
+  color: var(--vscode-inputValidation-infoForeground, var(--vscode-badge-foreground));
+  border: 1px solid var(--vscode-inputValidation-infoBorder);
+}
+
+.modifier-override {
+  background-color: var(--vscode-inputValidation-hintBackground);
+  color: var(--vscode-inputValidation-hintForeground, var(--vscode-badge-foreground));
+  border: 1px solid var(--vscode-inputValidation-hintBorder);
+}
+
+/* @todo 待办事项 — 警告样式 */
+.todo-section {
+  background-color: var(--vscode-inputValidation-warningBackground);
+  border: 1px solid var(--vscode-inputValidation-warningBorder);
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+}
+
+.todo-section .tag-title {
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-descriptionForeground));
+}
+
+.todo-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 12px;
+  color: var(--vscode-foreground);
+}
+
+.todo-icon {
+  flex-shrink: 0;
+  color: var(--vscode-list-warningIcon-foreground, var(--vscode-editorWarning-foreground));
+  margin-top: 2px;
+}
+
+.todo-text {
+  flex: 1;
+  word-break: break-word;
+}
+
+/* @type 类型声明 */
+.jsdoc-type-section .jsdoc-type-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.jsdoc-type-code,
+.jsdoc-typedef-name,
+.jsdoc-template-chip,
+.event-tag-name {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  background-color: var(--vscode-textCodeBlock-background, var(--vscode-editor-lineHighlightBackground));
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: var(--vscode-symbolIcon-classForeground);
+}
+
+.jsdoc-type-desc {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  word-break: break-word;
+}
+
+/* @typedef 类型定义 */
+.jsdoc-typedef-section .jsdoc-typedef-block {
+  padding: 6px 8px;
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));
+  border-left: 3px solid var(--vscode-symbolIcon-classForeground, var(--vscode-textLink-foreground));
+  border-radius: 0 4px 4px 0;
+}
+
+.jsdoc-typedef-signature {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.jsdoc-typedef-name {
+  color: var(--vscode-symbolIcon-interfaceForeground, var(--vscode-symbolIcon-classForeground));
+  font-weight: 600;
+}
+
+.jsdoc-typedef-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vscode-foreground);
+  word-break: break-word;
+}
+
+/* @template 泛型参数 */
+.jsdoc-template-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jsdoc-template-chip {
+  color: var(--vscode-symbolIcon-typeParameterForeground, var(--vscode-symbolIcon-classForeground));
+}
+
+/* @emits / @listens 事件标签 */
+.jsdoc-event-section .event-tag-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.event-tag-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.event-emits .event-tag-icon {
+  color: var(--vscode-symbolIcon-eventForeground, var(--vscode-editorWarning-foreground));
+}
+
+.event-listens .event-tag-icon {
+  color: var(--vscode-symbolIcon-eventForeground, var(--vscode-textLink-foreground));
+}
+
+.event-tag-name {
+  color: var(--vscode-symbolIcon-eventForeground, var(--vscode-symbolIcon-classForeground));
+}
+
+.event-tag-desc {
+  color: var(--vscode-descriptionForeground);
+  word-break: break-word;
+}
+
+/* JSDoc {@link} 内联链接 */
+.jsdoc-link {
+  color: var(--vscode-textLink-foreground);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  cursor: help;
+  outline: none;
+  transition: color 0.15s ease;
+}
+
+.jsdoc-link:hover {
+  text-decoration-style: solid;
+}
+
+.jsdoc-link:focus,
+.jsdoc-link:active {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  outline: none;
+}
+
+.jsdoc-linkcode {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 0.92em;
+  background-color: var(--vscode-textCodeBlock-background, var(--vscode-editor-lineHighlightBackground));
+  padding: 1px 4px;
+  border-radius: 3px;
 }
 
 /* ========== @doc 设计原理 ========== */
@@ -750,6 +1039,47 @@ body {
   word-break: break-word;
 }
 
+/* ========== 公式横向滚动 ========== */
+.md-math-block {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 0;
+  margin: 6px 0;
+}
+
+.md-math-block .katex-display {
+  margin: 0;
+  padding: 0;
+}
+
+/* KaTeX 块级公式可能溢出，添加滚动 */
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
+}
+
+/* KaTeX 行内公式不换行 */
+.md-math-inline,
+.md-math-inline .katex {
+  white-space: nowrap;
+}
+
+/* ========== Mermaid 图表 ========== */
+.md-mermaid {
+  background-color: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 12px;
+  margin: 8px 0;
+  overflow-x: auto;
+  text-align: center;
+}
+
+.md-mermaid .mermaid {
+  font-family: var(--vscode-editor-font-family);
+}
+
 /* ========== @example 示例 ========== */
 .example-section {
   background-color: var(--vscode-editor-background);
@@ -767,7 +1097,7 @@ body {
 }
 
 .example-section-header svg {
-  color: var(--vscode-symbolIcon-colorForeground, #e5c07b);
+  color: var(--vscode-symbolIcon-colorForeground);
   opacity: 0.85;
 }
 
@@ -788,6 +1118,122 @@ body {
   word-break: break-word;
   margin: 0;
   overflow-x: auto;
+}
+
+/* ========== 类型组（多类型文件的类型容器） ========== */
+.type-group {
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  background: var(--vscode-editor-background);
+}
+
+.type-group-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  min-height: 40px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-widget-border);
+  border-radius: 5px 5px 0 0;
+  transition: background-color 0.1s ease;
+  position: sticky;
+  top: 35px;
+  z-index: 30;
+}
+
+.type-group-header:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+.type-collapse-icon {
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.7;
+  transition: transform 0.15s ease;
+}
+
+.type-collapse-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+.type-group.collapsed .type-collapse-icon {
+  transform: rotate(-90deg);
+}
+
+.type-group.collapsed .type-group-content {
+  display: none;
+}
+
+.type-group.collapsed .type-group-header {
+  border-bottom: none;
+  border-radius: 5px;
+}
+
+.type-icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--vscode-symbolIcon-classForeground);
+  opacity: 0.85;
+}
+
+.type-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.type-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-textLink-foreground);
+  letter-spacing: 0.3px;
+}
+
+.type-group-content {
+  padding: 0 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* 类型卡片内的注释（描述 + JSDoc 标签） */
+.type-comment {
+  margin: 6px 0 2px;
+  padding: 8px 10px;
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));
+  border-left: 3px solid var(--vscode-symbolIcon-classForeground, var(--vscode-textLink-foreground));
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+}
+
+.type-comment > * {
+  margin-bottom: 8px;
+}
+
+.type-comment > *:last-child {
+  margin-bottom: 0;
+}
+
+.type-comment > .jsdoc-summary {
+  margin-bottom: 4px;
+}
+
+.type-group-content .member-group {
+  border: none;
+  border-radius: 0;
+}
+
+.type-group-content .member-group .group-header {
+  border-radius: 0;
 }
 
 /* ========== 类分隔线 ========== */
@@ -897,8 +1343,9 @@ body {
   margin: 16px 0;
 }
 
-.markdown-body .md-code-block {
-  background-color: var(--vscode-editor-background);
+/* 代码块 —— 统一样式，适用于 markdown-body / doc-section-content / method-description 等 */
+.md-code-block {
+  background-color: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
   border: 1px solid var(--vscode-widget-border);
   border-radius: 4px;
   padding: 10px 12px;
@@ -909,52 +1356,55 @@ body {
   line-height: 1.5;
 }
 
-.markdown-body .md-code-block[data-language] {
+.md-code-block[data-language] {
   position: relative;
-  padding-top: 24px;
+  padding-top: 26px;
 }
 
-.markdown-body .md-code-block[data-language]::before {
+.md-code-block[data-language]::before {
   content: attr(data-language);
   position: absolute;
   top: 6px;
-  right: 10px;
+  left: 12px;
   font-size: 10px;
+  font-weight: 600;
   color: var(--vscode-descriptionForeground);
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
 
-.markdown-body .md-code-block code {
+.md-code-block code {
   white-space: pre;
+  display: block;
 }
 
-.markdown-body .md-java-keyword {
-  color: var(--vscode-symbolIcon-keywordForeground, #c586c0);
+/* 代码高亮 */
+.md-java-keyword {
+  color: var(--vscode-symbolIcon-keywordForeground);
 }
 
-.markdown-body .md-java-type {
-  color: var(--vscode-symbolIcon-classForeground, #4ec9b0);
+.md-java-type {
+  color: var(--vscode-symbolIcon-classForeground);
 }
 
-.markdown-body .md-java-number {
-  color: var(--vscode-charts-yellow, #d7ba7d);
+.md-java-number {
+  color: var(--vscode-charts-yellow);
 }
 
-.markdown-body .md-java-string {
-  color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+.md-java-string {
+  color: var(--vscode-symbolIcon-stringForeground);
 }
 
-.markdown-body .md-java-comment {
+.md-java-comment {
   color: var(--vscode-descriptionForeground);
   font-style: italic;
 }
 
-.markdown-body .md-java-annotation {
-  color: var(--vscode-symbolIcon-operatorForeground, #dcdcaa);
+.md-java-annotation {
+  color: var(--vscode-symbolIcon-operatorForeground);
 }
 
-.markdown-body .md-inline-code {
+.md-inline-code {
   background-color: var(--vscode-editor-background);
   border: 1px solid var(--vscode-widget-border);
   border-radius: 3px;
@@ -963,7 +1413,7 @@ body {
   font-size: 0.9em;
 }
 
-.markdown-body .md-blockquote {
+.md-blockquote {
   border-left: 3px solid var(--vscode-textLink-foreground);
   padding: 4px 12px;
   margin: 8px 0;
@@ -972,40 +1422,40 @@ body {
   border-radius: 0 4px 4px 0;
 }
 
-.markdown-body .md-list {
+.md-list {
   padding-left: 24px;
   margin: 6px 0;
 }
 
-.markdown-body .md-list li {
+.md-list li {
   margin: 3px 0;
 }
 
-.markdown-body .md-table-wrap {
+.md-table-wrap {
   width: 100%;
   overflow-x: auto;
   margin: 10px 0;
 }
 
-.markdown-body .md-table {
+.md-table {
   width: 100%;
   min-width: 320px;
   border-collapse: collapse;
   border: 1px solid var(--vscode-widget-border);
 }
 
-.markdown-body .md-table th,
-.markdown-body .md-table td {
+.md-table th,
+.md-table td {
   border: 1px solid var(--vscode-widget-border);
   padding: 6px 8px;
 }
 
-.markdown-body .md-table th {
+.md-table th {
   font-weight: 600;
   background: var(--vscode-editor-lineHighlightBackground);
 }
 
-.markdown-body .md-mermaid-block {
+.md-mermaid-block {
   margin: 10px 0 14px 0;
   padding: 10px;
   border-radius: 6px;
@@ -1013,7 +1463,7 @@ body {
   background: var(--vscode-editor-background);
 }
 
-.markdown-body .md-mermaid-image {
+.md-mermaid-image {
   width: 100%;
   max-height: 460px;
   object-fit: contain;
@@ -1021,32 +1471,40 @@ body {
   border-radius: 4px;
 }
 
-.markdown-body .md-mermaid-caption {
+.md-mermaid-caption {
   margin-top: 6px;
   font-size: 11px;
   color: var(--vscode-descriptionForeground);
 }
 
-.markdown-body .md-mermaid-source {
+.md-mermaid-source {
   margin-top: 8px;
 }
 
-.markdown-body .md-mermaid-source > summary {
+.md-mermaid-source > summary {
   cursor: pointer;
   color: var(--vscode-textLink-foreground);
   font-size: 11px;
 }
 
-.markdown-body .md-link {
+.md-link {
   color: var(--vscode-textLink-foreground);
   text-decoration: none;
+  outline: none;
+  transition: color 0.15s ease;
 }
 
-.markdown-body .md-link:hover {
+.md-link:hover {
   text-decoration: underline;
 }
 
-.markdown-body .md-image {
+.md-link:focus,
+.md-link:active {
+  color: var(--vscode-textLink-activeForeground, var(--vscode-textLink-foreground));
+  outline: none;
+}
+
+.md-image {
   display: block;
   max-width: 100%;
   max-height: 420px;

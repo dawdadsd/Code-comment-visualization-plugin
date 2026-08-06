@@ -25,11 +25,11 @@ Author: [dawdadsd](https://github.com/dawdadsd)
 ## Demo Images
 
 Demo for Markdown docs
-![alt text](docs/images-1.png)
+![alt text](docs/images/images-1.png)
 
 Demo for Java code:
-![alt text](docs/images-2.png)
-![alt text](docs/images-3.png)
+![alt text](docs/images/images-2.png)
+![alt text](docs/images/images-3.png)
 
 showLock: true
 ![alt text](docs/images/image.png-1772677694890.png)The same applies to TS and JS code.

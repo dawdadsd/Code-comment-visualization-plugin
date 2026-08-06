@@ -2,7 +2,7 @@
   "name": "comment-sidebar",
   "displayName": "Comment Sidebar",
   "description": "在侧边栏实时展示代码文档，支持 Java / TypeScript / JavaScript，支持双向联动导航",
-  "version": "0.7.8",
+  "version": "0.9.17",
   "publisher": "xiaowuDev",
   "repository": {
     "type": "git",
@@ -28,8 +28,28 @@
   "activationEvents": [
     "onLanguage:java",
     "onLanguage:typescript",
+    "onLanguage:typescriptreact",
     "onLanguage:javascript",
-    "onLanguage:markdown"
+    "onLanguage:javascriptreact",
+    "onLanguage:markdown",
+    "onLanguage:c",
+    "onLanguage:cpp",
+    "onLanguage:csharp",
+    "onLanguage:objective-c",
+    "onLanguage:kotlin",
+    "onLanguage:scala",
+    "onLanguage:groovy",
+    "onLanguage:python",
+    "onLanguage:ruby",
+    "onLanguage:go",
+    "onLanguage:rust",
+    "onLanguage:php",
+    "onLanguage:lua",
+    "onLanguage:dart",
+    "onLanguage:swift",
+    "onLanguage:r",
+    "onLanguage:vue",
+    "onLanguage:svelte"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -99,5 +119,9 @@
     "eslint": "^9.0.0",
     "typescript": "^5.5.0"
   },
-  "extensionDependencies": []
+  "extensionDependencies": [],
+  "dependencies": {
+    "tree-sitter-wasms": "^0.1.13",
+    "web-tree-sitter": "^0.26.11"
+  }
 }

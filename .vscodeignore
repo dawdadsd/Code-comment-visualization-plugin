@@ -12,7 +12,10 @@ eslint.config.*
 
 # 包管理
 node_modules/**
+!node_modules/web-tree-sitter
+!node_modules/web-tree-sitter/**
 pnpm-lock.yaml
+pnpm-workspace.yaml
 package-lock.json
 
 # 文档和原型

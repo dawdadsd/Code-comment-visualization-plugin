@@ -23,11 +23,11 @@ author: [dawdadsd](https://github.com/dawdadsd)
 ## 演示图片
 
 关于MD文档的演示
-![alt text](docs/images-1.png)
+![alt text](docs/images/images-1.png)
 
 关于Java代码的演示效果 :
-![alt text](docs/images-2.png)
-![alt text](docs/images-3.png)
+![alt text](docs/images/images-2.png)
+![alt text](docs/images/images-3.png)
 
 锁定显示的时候，进入其他代码类侧边栏不会变化 :
 ![alt text](docs/images/image.png-1772677694890.png)

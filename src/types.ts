@@ -79,9 +79,56 @@ export interface ThrowsTag {
 }
 
 /**
+ * @type tag data (JSDoc)
+ * @type {string}
+ */
+export interface TypeTag {
+  readonly type: string;
+  readonly description: string;
+}
+
+/**
+ * @typedef tag data (JSDoc)
+ * @typedef {Object} UserName
+ */
+export interface TypeDefTag {
+  readonly name: string;
+  readonly type: string;
+  readonly description: string;
+}
+
+/**
+ * @property tag data (JSDoc)
+ * @property {string} name - description
+ */
+export interface PropertyTag {
+  readonly name: string;
+  readonly type: string;
+  readonly description: string;
+}
+
+/**
+ * @yields tag data (JSDoc)
+ * @yields {number} description
+ */
+export interface YieldsTag {
+  readonly type: string;
+  readonly description: string;
+}
+
+/**
+ * @emits / @fires / @listens tag data (JSDoc)
+ */
+export interface EventTag {
+  readonly name: string;
+  readonly description: string;
+}
+
+/**
  * tag tables
  */
 export interface TagTable {
+  // 已有标签
   readonly params: readonly ParamTag[];
   readonly returns: ReturnTag | null;
   readonly throws: readonly ThrowsTag[];
@@ -91,6 +138,18 @@ export interface TagTable {
   readonly see: readonly string[];
   readonly doc: string | null;
   readonly example: string | null;
+  // JSDoc 扩展标签
+  readonly type: TypeTag | null;
+  readonly typedef: TypeDefTag | null;
+  readonly properties: readonly PropertyTag[];
+  readonly template: readonly string[];
+  readonly yields: YieldsTag | null;
+  readonly summary: string | null;
+  readonly description: string | null;
+  readonly todo: readonly string[];
+  readonly emits: readonly EventTag[];
+  readonly listens: readonly EventTag[];
+  readonly modifiers: readonly string[];
 }
 
 /**
@@ -119,6 +178,8 @@ export interface MethodDoc {
   readonly kind: MethodKind; // 方法类别：普通方法 or 构造函数
   readonly name: string; // 方法名
   readonly signature: string; // 完整签名，如 "public User findById(Long id)"
+  readonly params: string; // 参数列表（从 AST 提取，如 "Long id, String name"）
+  readonly returnType: string; // 返回类型（从 AST 提取，如 "User"），构造函数为空
   readonly startLine: LineNumber; // 方法起始行（用于跳转）
   readonly endLine: LineNumber; // 方法结束行（用于判断光标是否在方法内）
   readonly hasComment: boolean; // 是否有 Javadoc 注释
@@ -129,11 +190,26 @@ export interface MethodDoc {
   readonly gitInfo?: GitAuthorInfo | undefined; // Git 作者信息（可选）
 }
 /**
+ * 单个类型（类/接口/枚举/结构体）的注释信息
+ *
+ * 多类型文件中，每个类型有独立的注释和标签，
+ * 前端在各自的类型卡片内渲染。
+ */
+export interface TypeGroupInfo {
+  readonly typeName: string; // 类型全名（如 "Foo" 或 "Outer.Inner"）
+  readonly comment: string; // 描述部分（已剥离 @tag）
+  readonly tags: TagTable; // 结构化标签
+  readonly startLine: number; // 类型声明所在行（用于跳转）
+}
+
+/**
  * 类文档 - 整个 Java 文件的解析结果
  */
 export interface ClassDoc {
-  readonly className: string; // 类名
-  readonly classComment: string; // 类注释
+  readonly className: string; // 类名（文件名，用于标题）
+  readonly classComment: string; // 文件级注释（描述部分，已剥离标签）
+  readonly classTags: TagTable; // 文件级注释标签
+  readonly typeGroups: readonly TypeGroupInfo[]; // 各类型的注释+标签（多类型文件）
   readonly packageName: string; // 包名
   readonly filePath: FilePath; // 文件路径
   readonly methods: readonly MethodDoc[]; // 方法列表（扁平化，含内部类）
@@ -153,6 +229,8 @@ export interface ClassDoc {
 export type DownstreamMessage =
   | { readonly type: "updateView"; readonly payload: ClassDoc }
   | { readonly type: "highlightMethod"; readonly payload: { id: MethodId } }
+  | { readonly type: "highlightField"; readonly payload: { line: LineNumber } }
+  | { readonly type: "clearHighlight" }
   | { readonly type: "clearView" }
   | {
       readonly type: "updateMarkdown";
@@ -173,6 +251,7 @@ export interface FieldDoc {
   readonly startLine: LineNumber;
   readonly hasComment: boolean;
   readonly description: string;
+  readonly tags: TagTable;
   readonly isConstant: boolean;
   readonly accessModifier: AccessModifier;
   readonly belongsTo: string;
@@ -202,6 +281,7 @@ export interface EnumConstantDoc {
  */
 export type UpstreamMessage =
   | { readonly type: "jumpToLine"; readonly payload: { line: LineNumber } } // 跳转到某行
+  | { readonly type: "openMarkdownLink"; readonly payload: { href: string } } // 打开 Markdown 本地链接
   | { readonly type: "webviewReady" }; // Webview 加载完成
 
 /**
@@ -226,6 +306,14 @@ export function isUpstreamMessage(value: unknown): value is UpstreamMessage {
         typeof msg["payload"] === "object" &&
         msg["payload"] !== null &&
         typeof (msg["payload"] as Record<string, unknown>)["line"] === "number"
+      );
+
+    case "openMarkdownLink":
+      // openMarkdownLink 需要有 payload.href 且是字符串
+      return (
+        typeof msg["payload"] === "object" &&
+        msg["payload"] !== null &&
+        typeof (msg["payload"] as Record<string, unknown>)["href"] === "string"
       );
 
     case "webviewReady":
@@ -257,14 +345,62 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
 export type SupportedLanguageId =
   | "java"
   | "typescript"
+  | "typescriptreact"
   | "javascript"
-  | "markdown";
+  | "javascriptreact"
+  | "markdown"
+  // C 系
+  | "c"
+  | "cpp"
+  | "csharp"
+  | "objective-c"
+  // JVM
+  | "kotlin"
+  | "scala"
+  | "groovy"
+  // 函数式 / 脚本
+  | "python"
+  | "ruby"
+  | "go"
+  | "rust"
+  | "php"
+  | "lua"
+  | "dart"
+  | "swift"
+  | "r"
+  // 前端
+  | "vue"
+  | "svelte";
 
 const SUPPORTED_LANGUAGE_IDS: Set<string> = new Set([
   "java",
   "typescript",
+  "typescriptreact",
   "javascript",
+  "javascriptreact",
   "markdown",
+  // C 系
+  "c",
+  "cpp",
+  "csharp",
+  "objective-c",
+  // JVM
+  "kotlin",
+  "scala",
+  "groovy",
+  // 函数式 / 脚本
+  "python",
+  "ruby",
+  "go",
+  "rust",
+  "php",
+  "lua",
+  "dart",
+  "swift",
+  "r",
+  // 前端
+  "vue",
+  "svelte",
 ]);
 
 export function isSupportedLanguage(

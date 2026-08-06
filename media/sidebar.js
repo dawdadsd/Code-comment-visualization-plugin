@@ -21,8 +21,12 @@
   let currentMarkdownImageMap = {};
   const collapsedMethods = new Set();
   const collapsedGroups = new Set();   // 记录被折叠的分组
+  const collapsedTypeGroups = new Set(); // 记录被折叠的类型组（多类型文件）
   let isCompactMode = true;
   let isLocked = false;
+  // 当前高亮目标（用于切换视图模式后恢复焦点）
+  // { kind: 'method', id } | { kind: 'field', line } | null
+  let currentHighlight = null;
 
   // ========== 初始化 ==========
   function init() {
@@ -31,7 +35,75 @@
     if (lockBtn) {
       lockBtn.addEventListener('click', toggleLock);
     }
+    const viewToggle = document.getElementById('viewToggle');
+    if (viewToggle) {
+      viewToggle.addEventListener('click', toggleViewMode);
+    }
     updateLockButton();
+    updateViewToggle();
+
+    // 注册 KaTeX 渲染回调 —— KaTeX auto-render 加载完成后调用
+    window.__renderMath = function () {
+      try {
+        if (window.renderMathInElement && root) {
+          window.renderMathInElement(root, {
+            delimiters: [
+              { left: '$$', right: '$$', display: true },
+              { left: '$', right: '$', display: false },
+            ],
+            throwOnError: false,
+          });
+        }
+      } catch (e) {
+        // KaTeX 未加载或渲染失败，静默忽略
+      }
+    };
+
+    // 注册 Mermaid 初始化回调 —— mermaid.js 加载完成后调用
+    window.__initMermaid = function () {
+      try {
+        if (window.mermaid) {
+          window.mermaid.initialize({
+            startOnLoad: false,
+            theme: document.body.classList.contains('vscode-light') ? 'default' : 'dark',
+            securityLevel: 'loose',
+          });
+        }
+      } catch (e) {
+        // mermaid 初始化失败，静默忽略
+      }
+    };
+
+    // 渲染 Mermaid 图表
+    window.__renderMermaid = function () {
+      try {
+        if (window.mermaid && root) {
+          const elements = root.querySelectorAll('.mermaid:not([data-processed])');
+          if (elements.length > 0) {
+            window.mermaid.run({ nodes: elements });
+          }
+        }
+      } catch (e) {
+        // mermaid 渲染失败，静默忽略
+      }
+    };
+
+    // highlight.js 代码高亮回调
+    window.__highlightCode = function () {
+      try {
+        if (window.hljs && root) {
+          root.querySelectorAll('pre.md-code-block code').forEach(function (block) {
+            if (!block.dataset.highlighted) {
+              window.hljs.highlightElement(block);
+              block.dataset.highlighted = 'true';
+            }
+          });
+        }
+      } catch (e) {
+        // 高亮失败，静默忽略
+      }
+    };
+
     vscode.postMessage({ type: 'webviewReady' });
   }
 
@@ -48,6 +120,14 @@
 
       case 'highlightMethod':
         highlightMethod(message.payload.id);
+        break;
+
+      case 'highlightField':
+        highlightField(message.payload.line);
+        break;
+
+      case 'clearHighlight':
+        clearHighlight();
         break;
 
       case 'clearView':
@@ -72,6 +152,10 @@
   // ========== 渲染函数 ==========
 
   function renderEmptyState(message) {
+    const stickyTitle = document.getElementById('sticky-title');
+    if (stickyTitle) {
+      stickyTitle.textContent = '';
+    }
     root.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">${getEmptyIcon()}</div>
@@ -85,69 +169,134 @@
    */
   function renderMarkdown(content, fileName, imageMap) {
     const htmlContent = markdownToHtml(content, imageMap || {});
+    // 更新 sticky header 标题
+    const stickyTitle = document.getElementById('sticky-title');
+    if (stickyTitle) {
+      stickyTitle.textContent = fileName || '';
+    }
     root.innerHTML = `
       <div class="markdown-view">
-        <div class="markdown-header">
-          <div class="markdown-file-name">${escapeHtml(fileName)}</div>
-        </div>
         <div class="markdown-body">${htmlContent}</div>
       </div>
     `;
+    if (window.__renderMath) window.__renderMath();
+    if (window.__renderMermaid) window.__renderMermaid();
+    if (window.__highlightCode) window.__highlightCode();
   }
 
   /**
-   * 主渲染入口 —— 分组策略
+   * 主渲染入口 —— 按 belongsTo 分组
+   *
+   * 单一类型（常见于 Java 单类文件）：标题 + 构造函数/方法/字段三组。
+   * 多类型（C++ 多 struct、JS 多组件等）：每个类型一个分隔标题 + 各自的分组。
    */
   function renderClassDoc(classDoc) {
-    const constructors = (classDoc.methods || []).filter(m => m.kind === 'constructor');
-    const methods = (classDoc.methods || []).filter(m => m.kind === 'method');
-    const fields = classDoc.fields || [];
-    const enumConstants = classDoc.enumConstants || [];
+    const allMethods = classDoc.methods || [];
+    const allFields = classDoc.fields || [];
+    const allEnumConstants = classDoc.enumConstants || [];
 
-    const hasContent = constructors.length > 0 || methods.length > 0
-      || fields.length > 0 || enumConstants.length > 0;
+    const hasContent = allMethods.length > 0 || allFields.length > 0
+      || allEnumConstants.length > 0;
 
     if (!classDoc || !hasContent) {
-      renderEmptyState('该类没有成员定义');
+      renderEmptyState('未识别到可显示的成员');
       return;
+    }
+
+    // 按 belongsTo 分组
+    const groupMap = new Map();
+    const getGroup = (key) => {
+      if (!groupMap.has(key)) {
+        groupMap.set(key, { constructors: [], methods: [], fields: [], enumConstants: [] });
+      }
+      return groupMap.get(key);
+    };
+
+    // 没有类/接口/枚举的文件（typeGroups 为空）也套一个 "Unknown" 类型卡片
+    const hasNoTypeGroups = !classDoc.typeGroups || classDoc.typeGroups.length === 0;
+    const fallbackKey = hasNoTypeGroups ? 'Unknown' : (classDoc.className || 'Unknown');
+    for (const m of allMethods) {
+      const key = m.belongsTo || fallbackKey;
+      if (m.kind === 'constructor') {
+        getGroup(key).constructors.push(m);
+      } else {
+        getGroup(key).methods.push(m);
+      }
+    }
+    for (const f of allFields) {
+      const key = f.belongsTo || fallbackKey;
+      getGroup(key).fields.push(f);
+    }
+    for (const ec of allEnumConstants) {
+      const key = ec.belongsTo || fallbackKey;
+      getGroup(key).enumConstants.push(ec);
+    }
+
+    const groups = Array.from(groupMap.entries());
+    const isMultiGroup = groups.length > 1;
+    // 无类型组时也包装为 Unknown 卡片，保持与多类文件一致的展示风格
+    const shouldWrapTypeGroup = isMultiGroup || hasNoTypeGroups;
+
+    // 构建类型注释映射：typeName → {comment, tags}
+    const typeGroupMap = new Map();
+    if (classDoc.typeGroups) {
+      for (const tg of classDoc.typeGroups) {
+        typeGroupMap.set(tg.typeName, tg);
+      }
     }
 
     let html = '';
 
-    // 头部：类信息 + 切换按钮
-    html += `
-      <div class="header">
-        <div class="header-top">
-          <div class="class-info">
-            <div class="class-name">${escapeHtml(classDoc.className)}</div>
-            ${classDoc.packageName ? `<div class="package-name">${escapeHtml(classDoc.packageName)}</div>` : ''}
-          </div>
-          <button class="view-toggle" id="viewToggle" title="${isCompactMode ? '切换到详细视图' : '切换到简洁视图'}">
-            ${isCompactMode ? getListIcon() : getDetailIcon()}
-          </button>
-        </div>
-        ${renderAuthorInfo(classDoc)}
-        ${classDoc.classComment ? `<div class="class-comment">${escapeHtml(classDoc.classComment)}</div>` : ''}
-      </div>
-    `;
+    // 更新 sticky header 标题
+    const stickyTitle = document.getElementById('sticky-title');
+    if (stickyTitle) {
+      stickyTitle.textContent = classDoc.className || '';
+    }
 
-    // 分组渲染（空组自动隐藏）
+    // 文件级注释：
+    // 单类型 → 顶部显示该类型的注释（与之前行为一致）
+    // 多类型 → 顶部仅显示文件头注释（如果有），各类型注释在各自卡片内渲染
+    html += renderClassComment(classDoc);
+    const authorInfo = renderAuthorInfo(classDoc);
+    if (authorInfo) {
+      html += authorInfo;
+    }
+
     html += '<div class="member-groups">';
 
-    if (constructors.length > 0) {
-      html += renderGroup('constructors', '构造函数', getConstructorIcon(), constructors, renderMethodItem);
-    }
-    if (methods.length > 0) {
-      html += renderGroup('methods', '方法', getMethodIcon(), methods, renderMethodItem);
-    }
-    if (enumConstants.length > 0 || fields.length > 0) {
-      html += renderFieldGroup(fields, enumConstants);
+    for (const [groupKey, group] of groups) {
+      // groupId 加 groupKey 前缀，避免多类型时折叠状态冲突
+      const gid = isMultiGroup ? `${groupKey}::` : '';
+
+      let groupContent = '';
+      if (group.constructors.length > 0) {
+        groupContent += renderGroup(`${gid}constructors`, '构造函数', getConstructorIcon(), group.constructors, renderMethodItem);
+      }
+      if (group.methods.length > 0) {
+        groupContent += renderGroup(`${gid}methods`, '方法', getMethodIcon(), group.methods, renderMethodItem);
+      }
+      if (group.enumConstants.length > 0 || group.fields.length > 0) {
+        groupContent += renderFieldGroup(group.fields, group.enumConstants, `${gid}fields`);
+      }
+
+      if (shouldWrapTypeGroup) {
+        // 查找该类型的注释信息
+        const typeInfo = typeGroupMap.get(groupKey);
+        html += renderTypeGroup(groupKey, groupContent, typeInfo);
+      } else {
+        html += groupContent;
+      }
     }
 
     html += '</div>';
 
     root.innerHTML = html;
     bindEvents();
+    if (window.__renderMath) window.__renderMath();
+    if (window.__renderMermaid) window.__renderMermaid();
+    if (window.__highlightCode) window.__highlightCode();
+    // 切换视图模式/重新渲染后恢复焦点定位
+    restoreHighlight();
   }
 
   /**
@@ -187,8 +336,8 @@
    * 渲染字段分组 —— 合并枚举常量和普通字段
    * 枚举常量排在前面，用图标区分
    */
-  function renderFieldGroup(fields, enumConstants) {
-    const isGroupCollapsed = collapsedGroups.has('fields');
+  function renderFieldGroup(fields, enumConstants, groupId = 'fields') {
+    const isGroupCollapsed = collapsedGroups.has(groupId);
     const collapsedClass = isGroupCollapsed ? 'collapsed' : '';
     const totalCount = fields.length + enumConstants.length;
 
@@ -205,8 +354,8 @@
     }
 
     return `
-      <div class="member-group ${collapsedClass}" data-group="fields">
-        <div class="group-header" data-group="fields">
+      <div class="member-group ${collapsedClass}" data-group="${escapeHtml(groupId)}">
+        <div class="group-header" data-group="${escapeHtml(groupId)}">
           <span class="group-collapse-icon">${getCollapseIcon()}</span>
           <span class="group-icon">${getFieldIcon()}</span>
           <span class="group-title">字段</span>
@@ -214,6 +363,42 @@
         </div>
         <div class="group-content ${isCompactMode ? 'compact-mode' : 'detail-mode'}">
           ${itemsHtml}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染类型组 —— 多类型文件中，每个类型（struct/class/interface）的可折叠容器
+   *
+   * @param {string} typeName — 类型名（如 "SegTree"、"ModPrime"）
+   * @param {string} contentHtml — 类型内部的分组 HTML
+   * @param {object} [typeInfo] — 类型的注释和标签（可选）
+   */
+  function renderTypeGroup(typeName, contentHtml, typeInfo) {
+    const isCollapsed = collapsedTypeGroups.has(typeName);
+    const collapsedClass = isCollapsed ? 'collapsed' : '';
+    const dataLine = typeInfo?.startLine != null ? `data-line="${typeInfo.startLine}"` : '';
+
+    // 类型注释（JSDoc/Javadoc 标签渲染）
+    let commentHtml = '';
+    if (typeInfo) {
+      const body = renderCommentBody(typeInfo.comment, typeInfo.tags);
+      if (body) {
+        commentHtml = `<div class="type-comment">${body}</div>`;
+      }
+    }
+
+    return `
+      <div class="type-group ${collapsedClass}" data-type="${escapeHtml(typeName)}">
+        <div class="type-group-header" data-type="${escapeHtml(typeName)}" ${dataLine}>
+          <span class="type-collapse-icon">${getCollapseIcon()}</span>
+          <span class="type-icon">${getTypeIcon()}</span>
+          <span class="type-name">${escapeHtml(typeName)}</span>
+        </div>
+        <div class="type-group-content">
+          ${commentHtml}
+          ${contentHtml}
         </div>
       </div>
     `;
@@ -232,15 +417,16 @@
    * 简洁模式
    */
   function renderMethodCompact(method) {
-    const noCommentClass = method.hasComment ? '' : 'no-comment';
     const firstLine = getFirstLine(method.description);
-    const returnType = method.tags?.returns?.type || 'void';
+    const returnType = method.tags?.returns?.type
+      || method.returnType
+      || 'void';
     const kindIcon = method.kind === 'constructor' ? getConstructorIcon() : getMethodIcon();
 
     const params = method.tags?.params || [];
     const paramsStr = params.length > 0
       ? params.map(p => `${p.type} ${p.name}`).join(', ')
-      : '无参数';
+      : (method.params || '无参数');
 
     // 构造函数不显示返回类型
     const returnHtml = method.kind === 'constructor' ? '' : `
@@ -251,11 +437,11 @@
     `;
 
     return `
-      <div class="method-item compact ${noCommentClass}" data-id="${escapeHtml(method.id)}" data-line="${method.startLine}">
+      <div class="method-item compact" data-id="${escapeHtml(method.id)}" data-line="${method.startLine}">
         <div class="method-compact-header">
           <span class="item-kind-icon" title="${method.kind === 'constructor' ? '构造函数' : '方法'}">${kindIcon}</span>
           <span class="method-name">${escapeHtml(method.name)}</span>
-          <span class="method-access">${escapeHtml(method.accessModifier)}</span>
+          ${method.accessModifier !== 'default' ? `<span class="access-badge">${escapeHtml(method.accessModifier)}</span>` : ''}
         </div>
         <div class="method-compact-meta">
           ${returnHtml}
@@ -265,8 +451,8 @@
           </div>
         </div>
         ${firstLine
-          ? `<div class="method-desc-preview">${escapeHtml(firstLine)}</div>`
-          : (method.hasComment ? '' : '<div class="method-desc-preview no-doc">无注释</div>')}
+          ? `<div class="method-desc-preview">${applyInlineMarkdown(firstLine, {})}</div>`
+          : ''}
       </div>
     `;
   }
@@ -276,29 +462,37 @@
    */
   function renderMethodDetail(method) {
     const isCollapsed = collapsedMethods.has(method.id);
-    const noCommentClass = method.hasComment ? '' : 'no-comment';
     const collapsedClass = isCollapsed ? 'collapsed' : '';
-    const returnType = method.tags?.returns?.type || 'void';
+    const returnType = method.tags?.returns?.type
+      || method.returnType
+      || 'void';
     const kindIcon = method.kind === 'constructor' ? getConstructorIcon() : getMethodIcon();
 
     const params = method.tags?.params || [];
     const paramsStr = params.length > 0
       ? params.map(p => `${p.type} ${p.name}`).join(', ')
-      : '无参数';
+      : (method.params || '无参数');
 
     let contentHtml = '';
 
     if (method.hasComment) {
+      // JSDoc: @summary（短摘要，优先显示在描述之前）
+      if (method.tags.summary) {
+        contentHtml += `<div class="jsdoc-summary">${escapeHtml(method.tags.summary)}</div>`;
+      }
+
       if (method.description) {
-        contentHtml += `<div class="method-description">${escapeHtml(method.description)}</div>`;
+        contentHtml += `<div class="method-description">${markdownToHtml(method.description, {})}</div>`;
       }
 
-      if (method.tags.doc) {
-        contentHtml += renderDocSection(method.tags.doc);
+      // JSDoc: @description（长描述，补充说明）
+      if (method.tags.description) {
+        contentHtml += `<div class="jsdoc-description">${markdownToHtml(method.tags.description, {})}</div>`;
       }
 
-      if (method.tags.example) {
-        contentHtml += renderExampleSection(method.tags.example);
+      // JSDoc: 修饰符徽章（@readonly/@async/@override）
+      if (method.tags.modifiers && method.tags.modifiers.length > 0) {
+        contentHtml += renderModifiers(method.tags.modifiers);
       }
 
       if (method.tags.deprecated) {
@@ -310,6 +504,19 @@
         `;
       }
 
+      // JSDoc: @todo 待办事项（警告样式）
+      if (method.tags.todo && method.tags.todo.length > 0) {
+        contentHtml += renderTodoSection(method.tags.todo);
+      }
+
+      if (method.tags.doc) {
+        contentHtml += renderDocSection(method.tags.doc);
+      }
+
+      if (method.tags.example) {
+        contentHtml += renderExampleSection(method.tags.example);
+      }
+
       if (method.tags.params && method.tags.params.length > 0) {
         contentHtml += renderParamsTable(method.tags.params);
       }
@@ -318,13 +525,44 @@
         contentHtml += renderReturnsTable(method.tags.returns);
       }
 
+      // JSDoc: @yields 生成器返回值
+      if (method.tags.yields) {
+        contentHtml += renderYieldsSection(method.tags.yields);
+      }
+
       if (method.tags.throws && method.tags.throws.length > 0) {
         contentHtml += renderThrowsTable(method.tags.throws);
       }
 
+      // JSDoc: @type 类型声明
+      if (method.tags.type) {
+        contentHtml += renderTypeSection(method.tags.type);
+      }
+
+      // JSDoc: @typedef 类型定义
+      if (method.tags.typedef) {
+        contentHtml += renderTypeDefSection(method.tags.typedef);
+      }
+
+      // JSDoc: @property 属性列表
+      if (method.tags.properties && method.tags.properties.length > 0) {
+        contentHtml += renderPropertiesTable(method.tags.properties);
+      }
+
+      // JSDoc: @template 泛型参数
+      if (method.tags.template && method.tags.template.length > 0) {
+        contentHtml += renderTemplateSection(method.tags.template);
+      }
+
+      // JSDoc: @emits / @listens 事件标签
+      if (
+        (method.tags.emits && method.tags.emits.length > 0) ||
+        (method.tags.listens && method.tags.listens.length > 0)
+      ) {
+        contentHtml += renderEventTags(method.tags.emits || [], method.tags.listens || []);
+      }
+
       contentHtml += renderOtherTags(method.tags);
-    } else {
-      contentHtml += '<div class="no-comment-hint">无注释</div>';
     }
 
     // 构造函数不显示返回类型
@@ -335,15 +573,19 @@
       </span>
     `;
 
+    const contentSection = contentHtml
+      ? `<div class="method-content" data-line="${method.startLine}">${contentHtml}</div>`
+      : '';
+
     return `
-      <div class="method-item detail ${noCommentClass} ${collapsedClass}" data-id="${escapeHtml(method.id)}">
+      <div class="method-item detail ${collapsedClass}" data-id="${escapeHtml(method.id)}">
         <div class="method-header" data-line="${method.startLine}">
           <span class="collapse-icon">${getCollapseIcon()}</span>
           <div class="method-info">
             <div class="method-name-row">
               <span class="item-kind-icon" title="${method.kind === 'constructor' ? '构造函数' : '方法'}">${kindIcon}</span>
               <span class="method-name">${escapeHtml(method.name)}</span>
-              <span class="access-badge">${escapeHtml(method.accessModifier)}</span>
+              ${method.accessModifier !== 'default' ? `<span class="access-badge">${escapeHtml(method.accessModifier)}</span>` : ''}
             </div>
             <div class="method-detail-meta">
               ${returnHtml}
@@ -354,9 +596,7 @@
             </div>
           </div>
         </div>
-        <div class="method-content">
-          ${contentHtml}
-        </div>
+        ${contentSection}
       </div>
     `;
   }
@@ -367,22 +607,25 @@
    * 渲染普通字段项
    */
   function renderFieldItem(field) {
-    const noCommentClass = field.hasComment ? '' : 'no-comment';
     const constantBadge = field.isConstant ? '<span class="constant-badge">const</span>' : '';
     const icon = field.isConstant ? getConstantIcon() : getFieldIcon();
 
+    // JSDoc 标签渲染（@deprecated/@todo/@see/@type 等）
+    const tagsHtml = field.tags ? renderCommentBody('', field.tags) : '';
+
     return `
-      <div class="field-item ${noCommentClass}" data-line="${field.startLine}">
+      <div class="field-item" data-line="${field.startLine}">
         <div class="field-header">
           <span class="item-kind-icon" title="${field.isConstant ? '常量' : '字段'}">${icon}</span>
           <span class="field-name">${escapeHtml(field.name)}</span>
           <span class="field-type">${escapeHtml(field.type)}</span>
           ${constantBadge}
-          <span class="method-access">${escapeHtml(field.accessModifier)}</span>
+          ${field.accessModifier !== 'default' ? `<span class="access-badge">${escapeHtml(field.accessModifier)}</span>` : ''}
         </div>
         ${field.description
-          ? `<div class="field-description">${escapeHtml(getFirstLine(field.description))}</div>`
-          : (field.hasComment ? '' : '<div class="field-description no-doc">无注释</div>')}
+          ? `<div class="field-description">${applyInlineMarkdown(getFirstLine(field.description), {})}</div>`
+          : ''}
+        ${tagsHtml ? `<div class="field-tags">${tagsHtml}</div>` : ''}
       </div>
     `;
   }
@@ -391,21 +634,20 @@
    * 渲染枚举常量项
    */
   function renderEnumConstantItem(ec) {
-    const noCommentClass = ec.hasComment ? '' : 'no-comment';
     const argsHtml = ec.arguments
       ? `<span class="enum-args">${escapeHtml(ec.arguments)}</span>`
       : '';
 
     return `
-      <div class="field-item enum-constant ${noCommentClass}" data-line="${ec.startLine}">
+      <div class="field-item enum-constant" data-line="${ec.startLine}">
         <div class="field-header">
           <span class="item-kind-icon" title="枚举常量">${getEnumConstantIcon()}</span>
           <span class="field-name enum-name">${escapeHtml(ec.name)}</span>
           ${argsHtml}
         </div>
         ${ec.description
-          ? `<div class="field-description">${escapeHtml(getFirstLine(ec.description))}</div>`
-          : (ec.hasComment ? '' : '<div class="field-description no-doc">无注释</div>')}
+          ? `<div class="field-description">${applyInlineMarkdown(getFirstLine(ec.description), {})}</div>`
+          : ''}
       </div>
     `;
   }
@@ -427,7 +669,7 @@
     return `
       <div class="tag-section">
         <div class="tag-title">参数 Parameters</div>
-        <table class="tag-table">
+        <div class="table-wrapper"><table class="tag-table">
           <thead>
             <tr>
               <th style="width: 20%">名称</th>
@@ -436,7 +678,7 @@
             </tr>
           </thead>
           <tbody>${rows}</tbody>
-        </table>
+        </table></div>
       </div>
     `;
   }
@@ -445,7 +687,7 @@
     return `
       <div class="tag-section">
         <div class="tag-title">返回值 Returns</div>
-        <table class="tag-table">
+        <div class="table-wrapper"><table class="tag-table">
           <thead>
             <tr>
               <th style="width: 30%">类型</th>
@@ -458,7 +700,7 @@
               <td>${escapeHtml(returns.description) || '-'}</td>
             </tr>
           </tbody>
-        </table>
+        </table></div>
       </div>
     `;
   }
@@ -477,7 +719,7 @@
     return `
       <div class="tag-section">
         <div class="tag-title">异常 Throws</div>
-        <table class="tag-table">
+        <div class="table-wrapper"><table class="tag-table">
           <thead>
             <tr>
               <th style="width: 40%">异常类型</th>
@@ -485,7 +727,7 @@
             </tr>
           </thead>
           <tbody>${rows}</tbody>
-        </table>
+        </table></div>
       </div>
     `;
   }
@@ -506,13 +748,205 @@
 
       if (tags.see && tags.see.length > 0) {
         for (const see of tags.see) {
-          html += `<div class="other-tag"><span class="other-tag-name">@see</span>${escapeHtml(see)}</div>`;
+          html += `<div class="other-tag"><span class="other-tag-name">@see</span>${markdownToHtml(see, {})}</div>`;
         }
       }
 
       html += '</div>';
     }
 
+    return html;
+  }
+
+  // ========== JSDoc 扩展标签渲染 ==========
+
+  /**
+   * 渲染修饰符徽章（@readonly / @async / @override）
+   */
+  function renderModifiers(modifiers) {
+    if (!modifiers || modifiers.length === 0) return '';
+    const badges = modifiers
+      .map((m) => `<span class="modifier-badge modifier-${escapeHtml(m)}">${escapeHtml(m)}</span>`)
+      .join('');
+    return `<div class="modifier-badges">${badges}</div>`;
+  }
+
+  /**
+   * 渲染 @todo 待办事项列表（警告样式）
+   */
+  function renderTodoSection(todos) {
+    if (!todos || todos.length === 0) return '';
+    const items = todos
+      .map(
+        (todo) => `
+        <li class="todo-item">
+          <span class="todo-icon">${getTodoIcon()}</span>
+          <div class="todo-text">${markdownToHtml(todo, {})}</div>
+        </li>
+      `,
+      )
+      .join('');
+    return `
+      <div class="todo-section">
+        <div class="tag-title">待办事项 @todo</div>
+        <ul class="todo-list">${items}</ul>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染 @type 类型声明
+   */
+  function renderTypeSection(typeTag) {
+    if (!typeTag) return '';
+    return `
+      <div class="tag-section jsdoc-type-section">
+        <div class="tag-title">类型 @type</div>
+        <div class="jsdoc-type-block">
+          <code class="jsdoc-type-code">${escapeHtml(typeTag.type)}</code>
+          ${typeTag.description ? `<span class="jsdoc-type-desc">${markdownToHtml(typeTag.description, {})}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染 @typedef 类型定义
+   */
+  function renderTypeDefSection(typedef) {
+    if (!typedef) return '';
+    return `
+      <div class="tag-section jsdoc-typedef-section">
+        <div class="tag-title">类型定义 @typedef</div>
+        <div class="jsdoc-typedef-block">
+          <div class="jsdoc-typedef-signature">
+            ${typedef.type ? `<code class="jsdoc-type-code">${escapeHtml(typedef.type)}</code>` : ''}
+            <code class="jsdoc-typedef-name">${escapeHtml(typedef.name)}</code>
+          </div>
+          ${typedef.description ? `<div class="jsdoc-typedef-desc">${markdownToHtml(typedef.description, {})}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染 @property 属性表格
+   */
+  function renderPropertiesTable(properties) {
+    if (!properties || properties.length === 0) return '';
+    let rows = '';
+    for (const prop of properties) {
+      rows += `
+        <tr>
+          <td class="name-cell">${escapeHtml(prop.name)}</td>
+          <td class="type-cell">${escapeHtml(prop.type)}</td>
+          <td>${markdownToHtml(prop.description, {}) || '-'}</td>
+        </tr>
+      `;
+    }
+
+    return `
+      <div class="tag-section">
+        <div class="tag-title">属性 @property</div>
+        <div class="table-wrapper"><table class="tag-table">
+          <thead>
+            <tr>
+              <th style="width: 20%">名称</th>
+              <th style="width: 25%">类型</th>
+              <th style="width: 55%">描述</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table></div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染 @template 泛型参数
+   */
+  function renderTemplateSection(templates) {
+    if (!templates || templates.length === 0) return '';
+    const chips = templates
+      .map((t) => `<code class="jsdoc-template-chip">${escapeHtml(t)}</code>`)
+      .join('');
+    return `
+      <div class="tag-section jsdoc-template-section">
+        <div class="tag-title">泛型参数 @template</div>
+        <div class="jsdoc-template-list">${chips}</div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染 @yields 生成器返回值
+   */
+  function renderYieldsSection(yields) {
+    if (!yields) return '';
+    return `
+      <div class="tag-section">
+        <div class="tag-title">生成值 @yields</div>
+        <div class="table-wrapper"><table class="tag-table">
+          <thead>
+            <tr>
+              <th style="width: 30%">类型</th>
+              <th style="width: 70%">描述</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="type-cell">${escapeHtml(yields.type)}</td>
+              <td>${markdownToHtml(yields.description, {}) || '-'}</td>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>
+    `;
+  }
+
+  /**
+   * 渲染 @emits / @listens 事件标签
+   */
+  function renderEventTags(emits, listens) {
+    let html = '';
+    if (emits && emits.length > 0) {
+      const items = emits
+        .map(
+          (e) => `
+          <div class="event-tag-item event-emits">
+            <span class="event-tag-icon">${getEventEmitIcon()}</span>
+            <code class="event-tag-name">${escapeHtml(e.name)}</code>
+            ${e.description ? `<span class="event-tag-desc">${escapeHtml(e.description)}</span>` : ''}
+          </div>
+        `,
+        )
+        .join('');
+      html += `
+        <div class="tag-section jsdoc-event-section">
+          <div class="tag-title">触发事件 @emits</div>
+          ${items}
+        </div>
+      `;
+    }
+    if (listens && listens.length > 0) {
+      const items = listens
+        .map(
+          (e) => `
+          <div class="event-tag-item event-listens">
+            <span class="event-tag-icon">${getEventListenIcon()}</span>
+            <code class="event-tag-name">${escapeHtml(e.name)}</code>
+            ${e.description ? `<span class="event-tag-desc">${escapeHtml(e.description)}</span>` : ''}
+          </div>
+        `,
+        )
+        .join('');
+      html += `
+        <div class="tag-section jsdoc-event-section">
+          <div class="tag-title">监听事件 @listens</div>
+          ${items}
+        </div>
+      `;
+    }
     return html;
   }
 
@@ -525,6 +959,25 @@
   function handleClick(event) {
     const target = event.target;
 
+    // JSDoc {@link} 内联链接 — 阻止默认跳转（仅作视觉提示，target 显示在 title）
+    const jsdocLink = target.closest('.jsdoc-link');
+    if (jsdocLink) {
+      event.preventDefault();
+      return;
+    }
+
+    // Markdown 链接：外部链接放行浏览器处理，本地链接交给宿主打开
+    const mdLink = target.closest('a.md-link');
+    if (mdLink) {
+      const href = mdLink.getAttribute('href') || '';
+      const isExternal = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href);
+      if (!isExternal) {
+        event.preventDefault();
+        vscode.postMessage({ type: 'openMarkdownLink', payload: { href } });
+      }
+      return;
+    }
+
     // 切换视图按钮
     if (target.closest('#viewToggle')) {
       isCompactMode = !isCompactMode;
@@ -534,22 +987,61 @@
       return;
     }
 
-    // 分组折叠/展开
+    // 类型组：三角形 → 折叠/展开，头部其他位置 → 跳转到类定义
+    const typeGroupHeader = target.closest('.type-group-header');
+    if (typeGroupHeader) {
+      const typeName = typeGroupHeader.dataset.type;
+      const collapseIcon = target.closest('.type-collapse-icon');
+      if (collapseIcon && typeName) {
+        toggleTypeGroupCollapse(typeName);
+      } else {
+        // 点击头部其他位置 → 跳转到类定义行
+        const line = parseInt(typeGroupHeader.dataset.line, 10);
+        if (!isNaN(line)) {
+          vscode.postMessage({ type: 'jumpToLine', payload: { line } });
+        }
+      }
+      return;
+    }
+
+    // 类卡片正文注释区点击 → 跳转到类定义行
+    // 排除链接、代码块、折叠块、Mermaid 图等交互元素
+    const typeComment = target.closest('.type-comment');
+    if (typeComment) {
+      if (!event.target.closest('a, details, pre, .md-mermaid-block')) {
+        const typeGroup = typeComment.closest('.type-group');
+        const header = typeGroup && typeGroup.querySelector('.type-group-header');
+        const line = parseInt(header && header.dataset.line, 10);
+        if (!isNaN(line)) {
+          vscode.postMessage({ type: 'jumpToLine', payload: { line } });
+        }
+      }
+      return;
+    }
+
+    // 分组：仅三角形可折叠/展开，头部其他位置无操作
     const groupHeader = target.closest('.group-header');
     if (groupHeader) {
       const groupId = groupHeader.dataset.group;
-      if (groupId) {
+      const collapseIcon = target.closest('.group-collapse-icon');
+      if (collapseIcon && groupId) {
         toggleGroupCollapse(groupId);
       }
       return;
     }
 
-    // 字段/枚举常量点击 → 跳转
+    // 字段/枚举常量点击 → 聚焦 + 跳转
     const fieldItem = target.closest('.field-item');
     if (fieldItem) {
-      const line = parseInt(fieldItem.dataset.line, 10);
-      if (!isNaN(line)) {
-        vscode.postMessage({ type: 'jumpToLine', payload: { line } });
+      // 聚焦：清除其他卡片焦点，高亮当前字段
+      document.querySelectorAll('.method-item, .field-item').forEach(item => item.classList.remove('active'));
+      fieldItem.classList.add('active');
+      // 跳转（排除交互元素如链接）
+      if (!event.target.closest('a, details, pre, .md-mermaid-block')) {
+        const line = parseInt(fieldItem.dataset.line, 10);
+        if (!isNaN(line)) {
+          vscode.postMessage({ type: 'jumpToLine', payload: { line } });
+        }
       }
       return;
     }
@@ -564,18 +1056,41 @@
       return;
     }
 
-    // 详细模式：点击头部
-    const methodHeader = target.closest('.method-header');
-    if (methodHeader) {
-      const methodItem = methodHeader.closest('.method-item');
-      const methodId = methodItem?.dataset.id;
-      const line = parseInt(methodHeader.dataset.line, 10);
+    // 详细模式方法卡片
+    const detailItem = target.closest('.method-item.detail');
+    if (detailItem) {
+      const methodId = detailItem.dataset.id;
+      const isActive = detailItem.classList.contains('active');
 
-      const collapseIcon = target.closest('.collapse-icon');
-      if (collapseIcon && methodId) {
-        toggleCollapse(methodId);
-      } else if (!isNaN(line)) {
-        vscode.postMessage({ type: 'jumpToLine', payload: { line } });
+      // 未聚焦：先聚焦此卡片（不 return，继续处理点击位置）
+      if (!isActive && methodId) {
+        document.querySelectorAll('.method-item').forEach(item => item.classList.remove('active'));
+        detailItem.classList.add('active');
+      }
+
+      // 点击头部 → 折叠/跳转（无论是否刚聚焦，都立即响应）
+      const methodHeader = target.closest('.method-header');
+      if (methodHeader) {
+        const line = parseInt(methodHeader.dataset.line, 10);
+        const collapseIcon = target.closest('.collapse-icon');
+        if (collapseIcon && methodId) {
+          toggleCollapse(methodId);
+        } else if (!isNaN(line)) {
+          vscode.postMessage({ type: 'jumpToLine', payload: { line } });
+        }
+        return;
+      }
+
+      // 点击注释区域 → 跳转（排除交互元素），无论是否刚聚焦都立即响应
+      const methodContent = target.closest('.method-content');
+      if (methodContent) {
+        if (!target.closest('a, details, pre, .md-mermaid-block')) {
+          const line = parseInt(methodContent.dataset.line, 10);
+          if (!isNaN(line)) {
+            vscode.postMessage({ type: 'jumpToLine', payload: { line } });
+          }
+        }
+        return;
       }
     }
   }
@@ -593,6 +1108,19 @@
     }
   }
 
+  function toggleTypeGroupCollapse(typeName) {
+    const typeEl = document.querySelector(`.type-group[data-type="${CSS.escape(typeName)}"]`);
+    if (!typeEl) return;
+
+    if (collapsedTypeGroups.has(typeName)) {
+      collapsedTypeGroups.delete(typeName);
+      typeEl.classList.remove('collapsed');
+    } else {
+      collapsedTypeGroups.add(typeName);
+      typeEl.classList.add('collapsed');
+    }
+  }
+
   function toggleCollapse(methodId) {
     const methodItem = document.querySelector(`.method-item[data-id="${methodId}"]`);
     if (!methodItem) return;
@@ -607,14 +1135,78 @@
   }
 
   function highlightMethod(methodId) {
-    const allItems = document.querySelectorAll('.method-item');
-    allItems.forEach(item => item.classList.remove('active'));
+    // 清除所有高亮
+    document.querySelectorAll('.method-item, .field-item').forEach(item => item.classList.remove('active'));
 
     const targetItem = document.querySelector(`.method-item[data-id="${methodId}"]`);
     if (targetItem) {
       targetItem.classList.add('active');
-      targetItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      scrollToItem(targetItem);
     }
+    currentHighlight = { kind: 'method', id: methodId };
+  }
+
+  function highlightField(line) {
+    // 清除所有高亮
+    document.querySelectorAll('.method-item, .field-item').forEach(item => item.classList.remove('active'));
+
+    const targetItem = document.querySelector(`.field-item[data-line="${line}"]`);
+    if (targetItem) {
+      targetItem.classList.add('active');
+      scrollToItem(targetItem);
+    }
+    currentHighlight = { kind: 'field', line };
+  }
+
+  function clearHighlight() {
+    document.querySelectorAll('.method-item, .field-item').forEach(item => item.classList.remove('active'));
+    currentHighlight = null;
+  }
+
+  /**
+   * 重新应用当前高亮（用于切换视图模式后恢复焦点）
+   * 重新渲染会丢失 DOM 上的 active 类，此函数根据 currentHighlight 重新定位
+   */
+  function restoreHighlight() {
+    if (!currentHighlight) return;
+    if (currentHighlight.kind === 'method') {
+      const item = document.querySelector(`.method-item[data-id="${currentHighlight.id}"]`);
+      if (item) {
+        item.classList.add('active');
+        scrollToItem(item);
+      }
+    } else if (currentHighlight.kind === 'field') {
+      const item = document.querySelector(`.field-item[data-line="${currentHighlight.line}"]`);
+      if (item) {
+        item.classList.add('active');
+        scrollToItem(item);
+      }
+    }
+  }
+
+  /**
+   * 以顶部为基准：计算驻留层高度，让目标显示在所有 sticky header 下方
+   */
+  function scrollToItem(targetItem) {
+    const stickyOffset = getStickyOffset(targetItem);
+    const rect = targetItem.getBoundingClientRect();
+    const targetScroll = window.scrollY + rect.top - stickyOffset - 8;
+    window.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' });
+  }
+
+  /**
+   * 计算目标元素上方所有驻留层的高度总和
+   * #sticky-header (35px) + .type-group-header (40px) + .group-header (35px)
+   */
+  function getStickyOffset(element) {
+    let offset = 35; // #sticky-header
+    if (element.closest('.type-group')) {
+      offset += 40; // .type-group-header
+    }
+    if (element.closest('.member-group')) {
+      offset += 35; // .group-header
+    }
+    return offset;
   }
 
   // ========== @doc 渲染 ==========
@@ -627,7 +1219,7 @@
           ${getBookIcon()}
           <span class="doc-section-title">设计原理 @doc</span>
         </div>
-        <div class="doc-section-content">${escapeHtml(docContent)}</div>
+        <div class="doc-section-content">${markdownToHtml(docContent, {})}</div>
       </div>
     `;
   }
@@ -651,17 +1243,6 @@
   const INLINE_TOKEN_PREFIX = '__MD_INLINE_';
   const TABLE_SEPARATOR_PATTERN = /^\s*\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?\s*$/;
   const LIST_ITEM_PATTERN = /^(\s*)([-+*]|\d+\.)\s+(.+)$/;
-  const JAVA_KEYWORDS = [
-    'abstract', 'assert', 'boolean', 'break', 'byte', 'case', 'catch', 'char',
-    'class', 'const', 'continue', 'default', 'do', 'double', 'else', 'enum',
-    'extends', 'final', 'finally', 'float', 'for', 'if', 'implements', 'import',
-    'instanceof', 'int', 'interface', 'long', 'native', 'new', 'package', 'private',
-    'protected', 'public', 'record', 'return', 'sealed', 'short', 'static', 'strictfp',
-    'super', 'switch', 'synchronized', 'this', 'throw', 'throws', 'transient', 'try',
-    'var', 'void', 'volatile', 'while', 'yield', 'permits', 'non-sealed', 'true',
-    'false', 'null',
-  ];
-  const JAVA_KEYWORD_PATTERN = new RegExp(`\b(${JAVA_KEYWORDS.join('|')})\b`, 'g');
 
   function markdownToHtml(text, imageMap) {
     if (!text) return '';
@@ -674,12 +1255,27 @@
         const lang = normalizeCodeLanguage(rawLang);
         const code = rawCode.replace(/\n$/, '');
         const token = createCodeBlockToken(codeBlocks.length);
-        codeBlocks.push(renderMarkdownCodeBlock(lang, code));
+        if (lang === 'mermaid') {
+          codeBlocks.push('<div class="md-mermaid"><pre class="mermaid">' + escapeHtml(code) + '</pre></div>');
+        } else {
+          codeBlocks.push(renderMarkdownCodeBlock(lang, code));
+        }
         return '\n' + token + '\n';
       },
     );
 
-    const lines = withCodeTokens.split('\n');
+    // 保护块级公式 $$ ... $$，避免被 Markdown 语法破坏
+    const mathBlocks = [];
+    const withMathTokens = withCodeTokens.replace(
+      /\$\$([\s\S]+?)\$\$/g,
+      function (_, formula) {
+        const token = '__MD_MATH_BLOCK_' + mathBlocks.length + '__';
+        mathBlocks.push('$$' + formula + '$$');
+        return '\n' + token + '\n';
+      },
+    );
+
+    const lines = withMathTokens.split('\n');
     const blocks = [];
 
     for (let index = 0; index < lines.length;) {
@@ -694,6 +1290,16 @@
       const codeTokenIndex = parseCodeBlockToken(trimmed);
       if (codeTokenIndex !== null) {
         blocks.push(codeBlocks[codeTokenIndex] || '');
+        index += 1;
+        continue;
+      }
+
+      // 块级公式 token
+      const mathTokenMatch = /^__MD_MATH_BLOCK_(\d+)__$/.exec(trimmed);
+      if (mathTokenMatch) {
+        const mathIndex = parseInt(mathTokenMatch[1], 10);
+        const formula = mathBlocks[mathIndex] || '';
+        blocks.push('<div class="md-math-block">' + escapeHtml(formula) + '</div>');
         index += 1;
         continue;
       }
@@ -771,16 +1377,14 @@
     }
 
     const safeLanguage = escapeHtml(language || 'text');
-    const highlightedCode =
-      language === 'java' ? highlightJavaCode(code) : escapeHtml(code);
+    const escapedCode = escapeHtml(code);
+    const langClass = language ? ` class="language-${safeLanguage}"` : '';
 
     return (
-      '<pre class="md-code-block language-' +
+      '<pre class="md-code-block" data-language="' +
       safeLanguage +
-      '" data-language="' +
-      safeLanguage +
-      '"><code>' +
-      highlightedCode +
+      '"><code' + langClass + '>' +
+      escapedCode +
       '</code></pre>'
     );
   }
@@ -816,53 +1420,6 @@
     }
     const encoded = btoa(binary);
     return 'https://mermaid.ink/svg/' + encoded + '?bgColor=transparent';
-  }
-
-  function highlightJavaCode(code) {
-    let html = escapeHtml(code);
-    const protectedTokens = [];
-
-    function keep(tokenHtml) {
-      const token = INLINE_TOKEN_PREFIX + protectedTokens.length + '__';
-      protectedTokens.push(tokenHtml);
-      return token;
-    }
-
-    html = html.replace(/\/\*[\s\S]*?\*\//g, function (match) {
-      return keep('<span class="md-java-comment">' + match + '</span>');
-    });
-    html = html.replace(/\/\/[^\n]*/g, function (match) {
-      return keep('<span class="md-java-comment">' + match + '</span>');
-    });
-    html = html.replace(
-      /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g,
-      function (match) {
-        return keep('<span class="md-java-string">' + match + '</span>');
-      },
-    );
-
-    html = html.replace(
-      /@[A-Za-z_][A-Za-z0-9_.]*/g,
-      '<span class="md-java-annotation">$&</span>',
-    );
-    html = html.replace(
-      JAVA_KEYWORD_PATTERN,
-      '<span class="md-java-keyword">$1</span>',
-    );
-    html = html.replace(
-      /\b\d[\d_]*(?:\.\d[\d_]*)?(?:[dDfFlL])?\b/g,
-      '<span class="md-java-number">$&</span>',
-    );
-    html = html.replace(
-      /\b([A-Z][A-Za-z0-9_]*)\b/g,
-      '<span class="md-java-type">$1</span>',
-    );
-
-    for (let index = 0; index < protectedTokens.length; index += 1) {
-      const token = INLINE_TOKEN_PREFIX + index + '__';
-      html = html.split(token).join(protectedTokens[index]);
-    }
-    return html;
   }
 
   function renderMarkdownBlockquote(lines, startIndex, imageMap) {
@@ -945,7 +1502,7 @@
       headerHtml +
       '</tr></thead><tbody>' +
       bodyHtml +
-      '</tbody></table></div>';
+      '</tbody></table></div></div>';
 
     return { html, nextIndex: index };
   }
@@ -1092,6 +1649,39 @@
       return token;
     }
 
+    // 保护行内公式 $ ... $（不匹配 $$）
+    content = content.replace(/(?<!\$)\$(?!\$)([^\n$]+?)\$/g, function (_, formula) {
+      return stash('<span class="md-math-inline">' + escapeHtml('$' + formula + '$') + '</span>');
+    });
+
+    // JSDoc {@link target} 和 {@link target|label} / {@link target label} 内联链接
+    // 同时支持 {@linkcode ...} 变体（渲染为代码样式）
+    content = content.replace(/\{@(link|linkcode)\s+([^}]+)\}/g, function (_, kind, linkContent) {
+      const trimmed = linkContent.trim();
+      let target = trimmed;
+      let label = trimmed;
+      // 优先按 | 分隔
+      const pipeIdx = trimmed.indexOf('|');
+      if (pipeIdx > 0) {
+        target = trimmed.slice(0, pipeIdx).trim();
+        label = trimmed.slice(pipeIdx + 1).trim();
+      } else {
+        // 按首个空白分隔（target label 形式）
+        const spaceMatch = /^(\S+)\s+([\s\S]+)$/.exec(trimmed);
+        if (spaceMatch) {
+          target = spaceMatch[1];
+          label = spaceMatch[2].trim();
+        }
+      }
+      const isCode = kind === 'linkcode';
+      const labelHtml = isCode
+        ? '<code class="jsdoc-linkcode">' + escapeHtml(label) + '</code>'
+        : escapeHtml(label);
+      return stash(
+        '<a class="jsdoc-link" href="#" data-target="' + escapeHtml(target) + '" title="' + escapeHtml(target) + '">' + labelHtml + '</a>',
+      );
+    });
+
     content = content.replace(/`([^`]+)`/g, function (_, codeText) {
       return stash(
         '<code class="md-inline-code">' + escapeHtml(codeText) + '</code>',
@@ -1231,6 +1821,128 @@
       .replace(/'/g, '&#039;');
   }
 
+  // ========== 类注释渲染 ==========
+
+  /**
+   * 渲染注释内容体（描述 + 结构化标签）
+   *
+   * 提取为独立函数，供文件级注释和类型级注释复用。
+   * @param comment - 描述部分（已剥离 @tag）
+   * @param tags    - 结构化标签表
+   * @returns HTML 字符串（不含外层容器）
+   */
+  function renderCommentBody(comment, tags) {
+    const hasTags = tags && (
+      tags.deprecated ||
+      tags.todo?.length > 0 ||
+      tags.see?.length > 0 ||
+      tags.example ||
+      tags.doc ||
+      tags.type ||
+      tags.typedef ||
+      tags.properties?.length > 0 ||
+      tags.template?.length > 0 ||
+      tags.summary ||
+      tags.description ||
+      tags.modifiers?.length > 0 ||
+      tags.emits?.length > 0 ||
+      tags.listens?.length > 0
+    );
+
+    if (!comment && !hasTags) return '';
+
+    let inner = '';
+
+    // @summary 短摘要
+    if (tags?.summary) {
+      inner += `<div class="jsdoc-summary">${escapeHtml(tags.summary)}</div>`;
+    }
+
+    // 主描述
+    if (comment) {
+      inner += `<div class="class-description">${markdownToHtml(comment, {})}</div>`;
+    }
+
+    // @description 长描述
+    if (tags?.description) {
+      inner += `<div class="jsdoc-description">${markdownToHtml(tags.description, {})}</div>`;
+    }
+
+    if (hasTags) {
+      // 修饰符徽章
+      if (tags.modifiers && tags.modifiers.length > 0) {
+        inner += renderModifiers(tags.modifiers);
+      }
+
+      // @deprecated 警告
+      if (tags.deprecated) {
+        inner += `
+          <div class="deprecated-tag">
+            <span class="other-tag-name">@deprecated</span>
+            ${escapeHtml(tags.deprecated)}
+          </div>
+        `;
+      }
+
+      // @todo 待办
+      if (tags.todo && tags.todo.length > 0) {
+        inner += renderTodoSection(tags.todo);
+      }
+
+      // @doc 设计原理
+      if (tags.doc) {
+        inner += renderDocSection(tags.doc);
+      }
+
+      // @example 示例
+      if (tags.example) {
+        inner += renderExampleSection(tags.example);
+      }
+
+      // @type / @typedef / @property / @template
+      if (tags.type) {
+        inner += renderTypeSection(tags.type);
+      }
+      if (tags.typedef) {
+        inner += renderTypeDefSection(tags.typedef);
+      }
+      if (tags.properties && tags.properties.length > 0) {
+        inner += renderPropertiesTable(tags.properties);
+      }
+      if (tags.template && tags.template.length > 0) {
+        inner += renderTemplateSection(tags.template);
+      }
+
+      // @emits / @listens 事件
+      if (
+        (tags.emits && tags.emits.length > 0) ||
+        (tags.listens && tags.listens.length > 0)
+      ) {
+        inner += renderEventTags(tags.emits || [], tags.listens || []);
+      }
+
+      // @see（@author/@since 已在作者信息区展示，此处仅渲染 @see）
+      if (tags.see && tags.see.length > 0) {
+        inner += '<div class="other-tags">';
+        for (const see of tags.see) {
+          inner += `<div class="other-tag"><span class="other-tag-name">@see</span>${markdownToHtml(see, {})}</div>`;
+        }
+        inner += '</div>';
+      }
+    }
+
+    return inner;
+  }
+
+  /**
+   * 渲染类/文件头注释 —— 描述 + 结构化标签
+   */
+  function renderClassComment(classDoc) {
+    const inner = renderCommentBody(classDoc.classComment, classDoc.classTags);
+    if (!inner) return '';
+    return `<div class="class-comment">${inner}</div>`;
+  }
+
   // ========== 作者信息 ==========
 
   function renderAuthorInfo(classDoc) {
@@ -1307,6 +2019,15 @@
   }
 
   // 构造函数图标 — 齿轮/扳手风格，表示"构建"
+  // 类型/类图标 — 用于多类型文件的类型组标题
+  function getTypeIcon() {
+    return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+      <path d="M2 17l10 5 10-5"></path>
+      <path d="M2 12l10 5 10-5"></path>
+    </svg>`;
+  }
+
   function getConstructorIcon() {
     return `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path>
@@ -1413,6 +2134,30 @@
     </svg>`;
   }
 
+  // @todo 待办事项图标 — 勾选框
+  function getTodoIcon() {
+    return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 11l3 3L22 4"></path>
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+    </svg>`;
+  }
+
+  // @emits 触发事件图标 — 闪电
+  function getEventEmitIcon() {
+    return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+    </svg>`;
+  }
+
+  // @listens 监听事件图标 — 耳朵/雷达
+  function getEventListenIcon() {
+    return `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 18v-6a9 9 0 0 1 18 0v6"></path>
+      <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"></path>
+      <path d="M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3"></path>
+    </svg>`;
+  }
+
   // ========== 锁定功能 ==========
 
   function toggleLock() {
@@ -1436,6 +2181,21 @@
       lockBtn.title = '锁定当前视图';
       lockBtn.classList.remove('lock-btn-active');
     }
+  }
+
+  function toggleViewMode() {
+    isCompactMode = !isCompactMode;
+    updateViewToggle();
+    if (currentClassDoc) {
+      renderClassDoc(currentClassDoc);
+    }
+  }
+
+  function updateViewToggle() {
+    const btn = document.getElementById('viewToggle');
+    if (!btn) return;
+    btn.innerHTML = isCompactMode ? getDetailIcon() : getListIcon();
+    btn.title = isCompactMode ? '切换到详细视图' : '切换到简洁视图';
   }
 
   function getLockClosedIcon() {
