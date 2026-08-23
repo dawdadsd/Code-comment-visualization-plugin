@@ -12,16 +12,14 @@ eslint.config.*
 
 # 包管理
 node_modules/**
-!node_modules/web-tree-sitter
-!node_modules/web-tree-sitter/**
 pnpm-lock.yaml
 pnpm-workspace.yaml
 package-lock.json
 
-# 文档和原型
-原型图/**
-开发文档/**
-
 # 其他
 *.vsix
 .DS_Store
+
+# 调试产物
+.dbg/**
+debug-*.md

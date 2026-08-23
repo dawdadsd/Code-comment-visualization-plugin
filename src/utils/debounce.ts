@@ -1,19 +1,22 @@
 /**
  * debounce.ts - 防抖工具函数
  *
- * 【什么是防抖？】
+ * **什么是防抖？：**
  * 当一个事件频繁触发时（如光标移动），我们不想每次都执行处理函数
  * 防抖的策略是：等事件停止触发一段时间后，才执行一次
  *
  * 例如：用户快速移动光标，每毫秒都触发事件
  * 没有防抖：执行 1000 次/秒
  * 有防抖（300ms）：用户停止移动 300ms 后才执行 1 次
+ *
+ * @author xiaowu
+ * @since 2026/02/04
  */
 
 /**
  * 创建一个防抖函数
  *
- * 【泛型 T extends (...args: Parameters<T>) => void 解释】
+ * **泛型 T extends (...args: Parameters<T>) => void 解释：**
  * - T 是一个函数类型
  * - Parameters<T> 获取函数 T 的参数类型元组
  * - 返回值类型是 void（防抖函数不关心原函数的返回值）
@@ -35,13 +38,13 @@ export function debounce<T extends (...args: Parameters<T>) => void>(
 ): (...args: Parameters<T>) => void {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  // return a new function that wraps the original function with ed
+  // 返回一个包装原函数的新函数，带防抖逻辑
   return (...args: Parameters<T>): void => {
     if (timeoutId !== null) {
       clearTimeout(timeoutId);
     }
 
-    // set a new timeout to call the function after the delay
+    // 设置新的定时器，在延迟后调用原函数
     timeoutId = setTimeout(() => {
       fn(...args);
       timeoutId = null;

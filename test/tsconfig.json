@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // 测试代码放宽严格检查（源码仍受主 tsconfig 严格约束）
+    "strict": false,
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "../out-test",
+    "types": ["node", "jest"]
+  },
+  "include": ["./**/*.ts"]
+}

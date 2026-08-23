@@ -4,7 +4,15 @@ node_modules
 out/
 *.vsix
 
-# 调试产物
+# tree-sitter 引擎与 grammar（由 scripts/sync-wasms.js 从 node_modules 同步，不进入版本库）
+media/lib/web-tree-sitter.cjs
+media/lib/*.wasm
+media/wasms/
+
+# 前端第三方资源（由 scripts/sync-vendors.js 从 node_modules 同步，不进入版本库）
+media/vendor/
+
+# 运行时调试辅助（正式单元测试在 test/，纳入版本库）
 .dbg/
 debug-*.md
 

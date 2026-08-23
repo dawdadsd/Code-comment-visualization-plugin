@@ -1,11 +1,12 @@
 /**
  * types.ts : 定义类型文件集中管理
- * @authro xiaowu
- * @since 2026/02/
+ *
+ * @author xiaowu
+ * @since 2026/02/04
  */
 import { DocumentSymbol } from "vscode";
 /**
- * brand Types
+ * brand 类型
  * example :
  * function jumpToLine(line : number)
  * function setAge(age : number)
@@ -48,8 +49,7 @@ export const ACCESS_MODIFIERS = [
 export type AccessModifier = (typeof ACCESS_MODIFIERS)[number];
 
 /**
- * example javadoc
- * @param id user unique id
+ * example javadoc — @param id user unique id
  *
  * translates to : {
  *  name : 'id',
@@ -71,7 +71,7 @@ export interface ReturnTag {
 }
 
 /**
- * @throws tag data
+ * 异常标签数据（@throws / @exception）
  */
 export interface ThrowsTag {
   readonly type: string;
@@ -79,8 +79,7 @@ export interface ThrowsTag {
 }
 
 /**
- * @type tag data (JSDoc)
- * @type {string}
+ * 类型标签数据（@type，JSDoc）。示例：@type {string}
  */
 export interface TypeTag {
   readonly type: string;
@@ -88,8 +87,7 @@ export interface TypeTag {
 }
 
 /**
- * @typedef tag data (JSDoc)
- * @typedef {Object} UserName
+ * 类型定义标签数据（@typedef，JSDoc）。示例：@typedef {Object} UserName
  */
 export interface TypeDefTag {
   readonly name: string;
@@ -98,8 +96,7 @@ export interface TypeDefTag {
 }
 
 /**
- * @property tag data (JSDoc)
- * @property {string} name - description
+ * 属性标签数据（@property / @prop，JSDoc）。示例：@property {string} name - description
  */
 export interface PropertyTag {
   readonly name: string;
@@ -108,8 +105,7 @@ export interface PropertyTag {
 }
 
 /**
- * @yields tag data (JSDoc)
- * @yields {number} description
+ * 生成器返回值标签数据（@yields / @yield，JSDoc）。示例：@yields {number} description
  */
 export interface YieldsTag {
   readonly type: string;
@@ -117,7 +113,7 @@ export interface YieldsTag {
 }
 
 /**
- * @emits / @fires / @listens tag data (JSDoc)
+ * 事件标签数据（@emits / @fires / @listens，JSDoc）
  */
 export interface EventTag {
   readonly name: string;
@@ -134,6 +130,7 @@ export interface TagTable {
   readonly throws: readonly ThrowsTag[];
   readonly since: string | null;
   readonly author: string | null;
+  readonly license: string | null;
   readonly deprecated: string | null;
   readonly see: readonly string[];
   readonly doc: string | null;
@@ -164,7 +161,7 @@ export interface GitAuthorInfo {
 /**
  * 方法类别 —— 区分普通方法和构造函数
  *
- * 【为什么需要区分？】
+ * **为什么需要区分？：**
  * VS Code SymbolKind 中 Method(6) 和 Constructor(9) 是不同的值，
  * 侧边栏需要用不同图标和分组来展示它们
  */
@@ -200,6 +197,7 @@ export interface TypeGroupInfo {
   readonly comment: string; // 描述部分（已剥离 @tag）
   readonly tags: TagTable; // 结构化标签
   readonly startLine: number; // 类型声明所在行（用于跳转）
+  readonly commentStartLine?: number | undefined; // 类型注释起始行（用于滚动锚点，无注释时 undefined）
 }
 
 /**
@@ -209,6 +207,8 @@ export interface ClassDoc {
   readonly className: string; // 类名（文件名，用于标题）
   readonly classComment: string; // 文件级注释（描述部分，已剥离标签）
   readonly classTags: TagTable; // 文件级注释标签
+  readonly fileHeaderStartLine?: number | undefined; // 文件头注释起始行（滚动锚点区间，无文件头时 undefined）
+  readonly fileHeaderEndLine?: number | undefined; // 文件头注释结束行（滚动锚点区间，无文件头时 undefined）
   readonly typeGroups: readonly TypeGroupInfo[]; // 各类型的注释+标签（多类型文件）
   readonly packageName: string; // 包名
   readonly filePath: FilePath; // 文件路径
@@ -216,8 +216,9 @@ export interface ClassDoc {
   readonly fields: readonly FieldDoc[]; // 字段列表
   readonly enumConstants: readonly EnumConstantDoc[]; // 枚举常量列表
   readonly gitInfo?: GitAuthorInfo | undefined; // 类的 Git 作者信息（可选）
-  readonly javadocAuthor?: string | undefined; // Javadoc @author 标签
-  readonly javadocSince?: string | undefined; // Javadoc @since 标签
+  readonly docAuthor?: string | undefined; // 文档注释 @author 标签
+  readonly docSince?: string | undefined; // 文档注释 @since 标签
+  readonly docLicense?: string | undefined; // 文档注释 SPDX / @license 标签
 }
 
 /**
@@ -239,7 +240,22 @@ export type DownstreamMessage =
         fileName: string;
         imageMap: Readonly<Record<string, string>>;
       };
-    };
+    }
+  | {
+      readonly type: "syncScroll";
+      readonly payload: {
+        topLine: number;
+        bottomLine: number;
+        totalLines: number;
+        /** 视觉中心对应的小数行号（折行时按字符偏移中点计算），侧边栏优先使用 */
+        centerLine?: number;
+      };
+    }
+  | {
+      readonly type: "setHighlightTheme";
+      readonly payload: { readonly dark: string; readonly light: string };
+    }
+  | { readonly type: "debugInfo"; readonly payload: { content: string } };
 
 /**
  * 字段文档 - 普通字段和常量的信息
@@ -249,6 +265,7 @@ export interface FieldDoc {
   readonly type: string;
   readonly signature: string;
   readonly startLine: LineNumber;
+  readonly endLine: LineNumber; // 字段结束行（含初始化器，用于判断光标是否在字段内）
   readonly hasComment: boolean;
   readonly description: string;
   readonly tags: TagTable;
@@ -260,7 +277,7 @@ export interface FieldDoc {
 /**
  * 枚举常量文档 - 独立于 FieldDoc 的类型
  *
- * 【为什么不复用 FieldDoc？】
+ * **为什么不复用 FieldDoc？：**
  * 枚举常量的语法与普通字段完全不同：
  *   - 没有类型声明（类型就是枚举自身）
  *   - 没有访问修饰符（隐式 public static final）
@@ -271,6 +288,7 @@ export interface FieldDoc {
 export interface EnumConstantDoc {
   readonly name: string; // 枚举常量名，如 "SUCCESS"
   readonly startLine: LineNumber; // 声明所在行
+  readonly endLine: LineNumber; // 枚举常量结束行（含构造参数/分号/逗号）
   readonly hasComment: boolean; // 是否有 Javadoc
   readonly description: string; // Javadoc 描述
   readonly arguments: string; // 构造参数文本，如 "(200, \"OK\")"，无参数则为 ""
@@ -282,22 +300,36 @@ export interface EnumConstantDoc {
 export type UpstreamMessage =
   | { readonly type: "jumpToLine"; readonly payload: { line: LineNumber } } // 跳转到某行
   | { readonly type: "openMarkdownLink"; readonly payload: { href: string } } // 打开 Markdown 本地链接
-  | { readonly type: "webviewReady" }; // Webview 加载完成
+  | { readonly type: "navigateToSymbol"; readonly payload: { name: string } } // 跳转到文件内符号
+  | { readonly type: "scrollEditor"; readonly payload: { line: number } } // 侧边栏滚动同步到编辑器（不移动光标）
+  | { readonly type: "webviewReady" } // Webview 加载完成
+  | { readonly type: "setViewMode"; readonly payload: { mode: "compact" | "detail" } } // 持久化用户视图模式偏好
+  | { readonly type: "__debug"; readonly payload: DebugReportPayload }; // 调试插桩上报（仅调试会话期间存在）
+
+/**
+ * 调试插桩上报负载（仅调试会话期间存在）
+ */
+export type DebugReportPayload = {
+  readonly hyp: string; // 假设 ID（A/B/C/D/E）
+  readonly loc: string; // 上报位置标识
+  readonly msg: string; // 事件描述
+  readonly data?: unknown; // 结构化数据
+};
 
 /**
  * 类型守卫 - 运行时检查消息是否合法
  *
- *@implNote : 为什么我们需要 类型守卫？
-              postMessage 传来的数据是 unknown 类型（可能是任何东西）
- *            我们需要在运行时验证它确实是 UpstreamMessage
-              is -> tell TypeScript if true ,value is UpstreamMessage
+ * **为什么需要类型守卫？：**
+ * postMessage 传来的数据是 unknown 类型（可能是任何东西），
+ * 我们需要在运行时验证它确实是 UpstreamMessage。
+ * is -> tell TypeScript if true ,value is UpstreamMessage
  */
 export function isUpstreamMessage(value: unknown): value is UpstreamMessage {
   if (typeof value !== "object" || value === null) {
     return false;
   }
 
-  // tell TypeScript value is Record<string,unknown>
+  // 告诉 TypeScript value 是 Record<string,unknown>
   const msg = value as Record<string, unknown>;
   switch (msg["type"]) {
     case "jumpToLine":
@@ -319,28 +351,46 @@ export function isUpstreamMessage(value: unknown): value is UpstreamMessage {
     case "webviewReady":
       return true;
 
+    case "navigateToSymbol":
+      return (
+        typeof msg["payload"] === "object" &&
+        msg["payload"] !== null &&
+        typeof (msg["payload"] as Record<string, unknown>)["name"] === "string"
+      );
+
+    case "scrollEditor":
+      return (
+        typeof msg["payload"] === "object" &&
+        msg["payload"] !== null &&
+        typeof (msg["payload"] as Record<string, unknown>)["line"] === "number"
+      );
+
+    case "setViewMode":
+      // setViewMode 需要有 payload.mode 且为 "compact" | "detail"
+      return (
+        typeof msg["payload"] === "object" &&
+        msg["payload"] !== null &&
+        ((msg["payload"] as Record<string, unknown>)["mode"] === "compact" ||
+          (msg["payload"] as Record<string, unknown>)["mode"] === "detail")
+      );
+
+    case "__debug":
+      // __debug 需要 hyp/loc/msg 均为字符串
+      {
+        const payload = msg["payload"];
+        return (
+          typeof payload === "object" &&
+          payload !== null &&
+          typeof (payload as Record<string, unknown>)["hyp"] === "string" &&
+          typeof (payload as Record<string, unknown>)["loc"] === "string" &&
+          typeof (payload as Record<string, unknown>)["msg"] === "string"
+        );
+      }
+
     default:
       return false;
   }
 }
-
-/**
- * 扩展配置
- */
-export interface ExtensionConfig {
-  readonly enableAutoHighlight: boolean; // 是否启用反向联动
-  readonly debounceDelay: number; // 防抖延迟（毫秒）
-  readonly maxMethods: number; // 最大方法数
-}
-
-/**
- * 默认配置
- */
-export const DEFAULT_CONFIG: ExtensionConfig = {
-  enableAutoHighlight: true,
-  debounceDelay: 300,
-  maxMethods: 200,
-} as const satisfies ExtensionConfig;
 
 export type SupportedLanguageId =
   | "java"

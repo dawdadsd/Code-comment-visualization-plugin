@@ -2,7 +2,7 @@
   "name": "comment-sidebar",
   "displayName": "Comment Sidebar",
   "description": "在侧边栏实时展示代码文档，支持 Java / TypeScript / JavaScript，支持双向联动导航",
-  "version": "0.9.17",
+  "version": "0.9.106",
   "publisher": "xiaowuDev",
   "repository": {
     "type": "git",
@@ -56,72 +56,93 @@
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "javaDocExplorer",
+          "id": "commentSidebarExplorer",
           "title": "Doc Sidebar",
           "icon": "media/icon.svg"
         }
       ]
     },
     "views": {
-      "javaDocExplorer": [
+      "commentSidebarExplorer": [
         {
           "icon": "media/icon.svg",
           "type": "webview",
-          "id": "javaDocSidebar",
+          "id": "commentSidebar",
           "name": "文档导航"
         }
       ]
     },
     "commands": [
       {
-        "command": "javaDocSidebar.refresh",
+        "command": "commentSidebar.refresh",
         "title": "刷新文档侧边栏",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "commentSidebar.debugDump",
+        "title": "调试：输出当前文件符号与解析结果",
+        "icon": "$(bug)"
       }
     ],
     "configuration": {
-      "title": "Doc Sidebar",
+      "title": "Comment Sidebar",
       "properties": {
-        "javaDocSidebar.enableAutoHighlight": {
-          "type": "boolean",
-          "default": true,
-          "description": "是否启用光标移动时的反向联动高亮"
+        "commentSidebar.codePreviewTheme.dark": {
+          "type": "string",
+          "enum": [
+            "vs2015",
+            "catppuccin-frappe",
+            "catppuccin-macchiato",
+            "catppuccin-mocha"
+          ],
+          "default": "vs2015",
+          "description": "编辑器为深色主题时，代码预览（Markdown 代码块/注释代码）使用的代码高亮主题"
         },
-        "javaDocSidebar.debounceDelay": {
-          "type": "number",
-          "default": 300,
-          "minimum": 100,
-          "maximum": 1000,
-          "description": "反向联动的防抖延迟（毫秒）"
-        },
-        "javaDocSidebar.maxMethods": {
-          "type": "number",
-          "default": 200,
-          "description": "侧边栏最多展示的方法数量"
+        "commentSidebar.codePreviewTheme.light": {
+          "type": "string",
+          "enum": [
+            "github",
+            "catppuccin-latte"
+          ],
+          "default": "github",
+          "description": "编辑器为浅色主题时，代码预览（Markdown 代码块/注释代码）使用的代码高亮主题"
         }
       }
     }
   },
   "scripts": {
-    "vscode:prepublish": "pnpm run compile",
+    "vscode:prepublish": "pnpm run sync:wasms && pnpm run sync:vendors && pnpm run compile",
+    "sync:wasms": "node scripts/sync-wasms.js",
+    "sync:vendors": "node scripts/sync-vendors.js",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "lint": "eslint src --ext ts",
     "pretest": "pnpm run compile",
+    "test": "jest",
+    "test:unit": "jest fieldType tagParser",
+    "test:parser": "jest parser",
     "package": "vsce package --no-dependencies"
   },
   "devDependencies": {
+    "@catppuccin/highlightjs": "^1.0.1",
+    "@highlightjs/cdn-assets": "^11.11.1",
+    "@catppuccin/highlightjs": "^1.0.1",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.95.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
     "@vscode/vsce": "^3.7.1",
     "eslint": "^9.0.0",
+    "jest": "^30.4.2",
+    "katex": "^0.18.1",
+    "mermaid": "^10.9.8",
+    "ts-jest": "^29.4.12",
     "typescript": "^5.5.0"
   },
   "extensionDependencies": [],
   "dependencies": {
     "tree-sitter-wasms": "^0.1.13",
-    "web-tree-sitter": "^0.26.11"
+    "web-tree-sitter": "^0.20.8"
   }
 }

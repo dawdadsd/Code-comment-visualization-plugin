@@ -2,6 +2,9 @@
  * GitService.ts - Git 信息服务
  *
  * 提供 Git blame 信息查询功能，用于获取代码作者和修改时间
+ *
+ * @author xiaowu
+ * @since 2026/02/04
  */
 
 import { exec } from "child_process";
@@ -25,8 +28,8 @@ export interface GitBlameInfo {
  */
 export interface ClassGitInfo {
   readonly author: string; // 类的原始作者（第一次提交）
-  readonly lastModifier: string; // 最后修改者
-  readonly lastModifyDate: string; // 最后修改时间
+  readonly lastModifier: string; // 最后修改者（整个文件最近一次提交）
+  readonly lastModifyDate: string; // 最后修改时间（整个文件最近一次提交）
 }
 
 /**
@@ -83,18 +86,43 @@ export class GitService {
     const workDir = path.dirname(filePath);
     const fileName = path.basename(filePath);
 
-    // 先获取类声明行的最后修改者；即使后续 git log 失败也能回退展示。
-    const lastModifier = await this.getBlameForLine(filePath, classLine);
+    // 最后修改者：按"整个文件最近一次提交"计算（git log -n 1 -- <file>），
+    // 与下方原始作者的文件级 git log 口径一致。
+    // 不能用类声明行的 blame —— 行级 blame 只反映该行最后一次改动，文件
+    // 其他部分（方法体、注释等）被修改时不会体现，导致"最后修改"长期
+    // 停留在类声明行最后一次改动的时间。
+    let lastModifier: GitBlameInfo | null = null;
+    try {
+      const { stdout } = await execAsync(
+        `git log -n 1 --format="%an|%ad" --date=short -- "${fileName}"`,
+        { cwd: workDir, timeout: 5000 },
+      );
+      const [author, date] = stdout.trim().split("|");
+      if (author) {
+        lastModifier = { author, email: "", date: date ?? "", commitHash: "" };
+      }
+    } catch (error) {
+      console.debug("[GitService] Get last modifier failed:", error);
+    }
+
+    // 回退：git log 失败（非 git 仓库 / 文件未跟踪）时退回类声明行的 blame，
+    // 至少能展示部分信息
+    const lastModifierInfo =
+      lastModifier ?? (await this.getBlameForLine(filePath, classLine));
 
     let originalAuthor = "";
     try {
       // 获取文件的第一次提交作者（原始作者）
       // 注意：不要用 "| tail -1" 之类的管道命令，Windows 默认 shell 不支持。
+      // 用 --reverse 让最老的提交排在最前，取第一行；不能加 -n 1 ——
+      // git 的 -n 会先截断（取最新 N 条）再反转，配合 --reverse 得到的是
+      // 最新提交而非最老提交，过滤后查询会落空（旧实现因此恒为空，
+      // 原始作者始终静默回退成最后修改者）。
       const { stdout: logOutput } = await execAsync(
-        `git log --follow --diff-filter=A --reverse -n 1 --format="%an|%ad" --date=short -- "${fileName}"`,
+        `git log --follow --diff-filter=A --reverse --format="%an|%ad" --date=short -- "${fileName}"`,
         { cwd: workDir, timeout: 5000 },
       );
-      originalAuthor = logOutput.trim().split("|")[0] ?? "";
+      originalAuthor = logOutput.trim().split("\n")[0]?.split("|")[0] ?? "";
     } catch (error) {
       console.debug("[GitService] Get original author failed:", error);
     }

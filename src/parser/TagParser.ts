@@ -1,12 +1,14 @@
 /**
- * TagParser.ts - Javadoc tag parser
+ * TagParser.ts - Javadoc 标签解析器
  *
- * Purpose:
- * - Parse raw Javadoc tag text into a structured TagTable.
+ * 将原始 Javadoc 标签文本解析为结构化的 TagTable。
  *
- * Why:
- * - UI rendering needs stable typed data instead of raw text.
- * - Line-based tokenization is safer than regex split when descriptions contain "@xxx" text.
+ * 设计原因：
+ * - UI 渲染需要稳定的类型化数据，而非原始文本。
+ * - 当描述中包含 "@xxx" 文本时，基于行的分词比正则切分更安全。
+ *
+ * @author xiaowu
+ * @since 2026/02/04
  */
 
 import type {
@@ -20,37 +22,8 @@ import type {
   YieldsTag,
   EventTag,
 } from "../types.js";
-
-type SupportedTag =
-  | "param"
-  | "return"
-  | "returns"
-  | "throws"
-  | "exception"
-  | "since"
-  | "author"
-  | "deprecated"
-  | "see"
-  | "doc"
-  | "example"
-  // JSDoc 扩展标签
-  | "type"
-  | "typedef"
-  | "property"
-  | "prop"
-  | "template"
-  | "yields"
-  | "yield"
-  | "summary"
-  | "description"
-  | "desc"
-  | "todo"
-  | "emits"
-  | "fires"
-  | "listens"
-  | "readonly"
-  | "async"
-  | "override";
+import type { SupportedTag } from "./tagConstants.js";
+import { TAG_LINE_PATTERN, SUPPORTED_TAG_SET } from "./tagConstants.js";
 
 interface ParsedTagBlock {
   readonly tag: SupportedTag;
@@ -58,10 +31,22 @@ interface ParsedTagBlock {
 }
 
 /**
- * Regex pattern to identify Javadoc/JSDoc tag lines.
+ * 匹配 SPDX 许可标识行的正则（无 @ 前缀的标准形式）。
+ *
+ * 文件头中的 `SPDX-License-Identifier: MIT` 是许可证标识的事实标准写法，
+ * 需归一化为 license 标签处理；否则它不匹配 TAG_LINE_PATTERN，会被当作
+ * 前一个标签（如 @author）的多行延续内容吞并，导致作者信息被污染。
  */
-const TAG_LINE_PATTERN =
-  /^\s*\*?\s*@(?<tag>param|return|returns|throws|exception|since|author|deprecated|see|doc|example|type|typedef|property|prop|template|yields|yield|summary|description|desc|todo|emits|fires|listens|readonly|async|override)\b\s*(?<content>.*)$/i;
+const SPDX_LICENSE_PATTERN = /^SPDX-License-Identifier:\s*(.+)$/i;
+
+/**
+ * 匹配未知 @标签行的正则（行首 @word 形态，但不在受支持标签列表内）。
+ *
+ * 受支持列表之外的 @xxx（如 @module、@file）是元数据行而非正文延续，
+ * 若被当作前一个标签的多行延续吞并，会污染 @description/@author 等
+ * 标签内容（例：`@description ...\n@module xxx` 会把 @module 并入描述）。
+ */
+const UNKNOWN_TAG_PATTERN = /^@\w+/;
 
 /**
  * 参数前可忽略的修饰符集合
@@ -69,18 +54,19 @@ const TAG_LINE_PATTERN =
 const PARAM_MODIFIERS: ReadonlySet<string> = new Set(["final"]);
 
 const JAVA_METHOD_MODIFIER_PREFIX =
-  /^\s*(?:(?:public|private|protected|static|final|abstract|synchronized|default|native|strictfp)\s+)*/;
+  /^\s*(?:(?:public|private|protected|static|final|abstract|synchronized|default|native|strictfp|function|export|async)\s+)*/;
 
 /**
- * Purpose: Parse Javadoc tag section into TagTable.
- * Why: Keep downstream rendering logic simple and type-safe.
- * @param rawTags - Raw tag text (starting at first @tag line).
- * @param signature - Method/constructor signature, used for type inference.
- * @returns Structured TagTable.
- * Side effects: None.
+ * 将 Javadoc 标签段解析为 TagTable。
+ *
+ * 设计原因：让下游渲染逻辑保持简单且类型安全。
+ *
+ * @param rawTags - 原始标签文本（从第一个 @tag 行开始）。
+ * @param signature - 方法/构造函数签名，用于类型推断。
+ * @returns 结构化的 TagTable。
  */
 export function parseTagTable(rawTags: string, signature: string): TagTable {
-  //Avoid shared reference contamination
+  // 避免共享引用污染
   if (!rawTags.trim()) {
     return createEmptyTagTable();
   }
@@ -106,6 +92,7 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
   let returnTag: ReturnTag | null = null;
   let since: string | null = null;
   let author: string | null = null;
+  let license: string | null = null;
   let deprecated: string | null = null;
   let doc: string | null = null;
   let example: string | null = null;
@@ -136,7 +123,9 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
             type: jsdocType.type,
             description: jsdocType.rest,
           };
-        } else if (returnType !== "void") {
+        } else if (returnType && returnType !== "void") {
+          // 签名能推断出具体返回类型时才生成 @return 标签；
+          // 无类型注解的 JS 函数（如 "function foo()"）推断为空，不生成空类型标签
           returnTag = {
             type: returnType,
             description: content,
@@ -160,6 +149,10 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
 
       case "author":
         author = content || null;
+        break;
+
+      case "license":
+        license = content || null;
         break;
 
       case "deprecated":
@@ -296,6 +289,7 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
     throws: throwsTags,
     since,
     author,
+    license,
     deprecated,
     see: seeTags,
     doc,
@@ -316,8 +310,8 @@ export function parseTagTable(rawTags: string, signature: string): TagTable {
 }
 
 /**
- * Purpose: Build a fresh empty TagTable.
- * Why: Avoid sharing mutable array references.
+ * 构建一个全新的空 TagTable。
+ * 设计原因：避免共享可变数组引用。
  */
 export function createEmptyTagTable(): TagTable {
   return {
@@ -326,6 +320,7 @@ export function createEmptyTagTable(): TagTable {
     throws: [],
     since: null,
     author: null,
+    license: null,
     deprecated: null,
     see: [],
     doc: null,
@@ -346,8 +341,8 @@ export function createEmptyTagTable(): TagTable {
 }
 
 /**
- * Purpose: Tokenize raw tag text by lines into stable blocks.
- * Why: Regex split can break when descriptions include "@tag" as plain text.
+ * 按行将原始标签文本分词为稳定的数据块。
+ * 设计原因：当描述中包含作为纯文本的 "@tag" 时，正则切分会出错。
  */
 function tokenizeTagBlocks(rawTags: string): readonly ParsedTagBlock[] {
   const blocks: ParsedTagBlock[] = [];
@@ -370,6 +365,15 @@ function tokenizeTagBlocks(rawTags: string): readonly ParsedTagBlock[] {
 
   for (const rawLine of lines) {
     const line = normalizeJavadocLine(rawLine);
+    // SPDX 许可标识行：归一化为 license 标签块（先于 @tag 匹配，
+    // 避免被并入前一个标签的延续内容）
+    const spdxMatch = SPDX_LICENSE_PATTERN.exec(line);
+    if (spdxMatch?.[1]) {
+      flush();
+      activeTag = "license";
+      buffer.push(spdxMatch[1].trim());
+      continue;
+    }
     const match = TAG_LINE_PATTERN.exec(line);
     if (match?.groups) {
       flush();
@@ -378,6 +382,11 @@ function tokenizeTagBlocks(rawTags: string): readonly ParsedTagBlock[] {
         activeTag = tagText;
         buffer.push((match.groups["content"] ?? "").trim());
       }
+      continue;
+    }
+    // 未知 @标签行：结束当前标签块，不作为延续文本（元数据而非正文）
+    if (UNKNOWN_TAG_PATTERN.test(line)) {
+      flush();
       continue;
     }
     if (activeTag) {
@@ -389,53 +398,20 @@ function tokenizeTagBlocks(rawTags: string): readonly ParsedTagBlock[] {
 }
 
 /**
- * Purpose: Normalize one Javadoc line before parsing.
- * Why: Input may still contain leading '*' from original comment lines.
+ * 解析前规范化单行 Javadoc。
+ * 设计原因：输入可能仍保留原始注释行的前导 '*'。
  */
 function normalizeJavadocLine(line: string): string {
   return line.replace(/^\s*\*\s?/, "");
 }
 
 function isSupportedTag(value: string): value is SupportedTag {
-  switch (value) {
-    case "param":
-    case "return":
-    case "returns":
-    case "throws":
-    case "exception":
-    case "since":
-    case "author":
-    case "deprecated":
-    case "see":
-    case "doc":
-    case "example":
-    // JSDoc 扩展标签
-    case "type":
-    case "typedef":
-    case "property":
-    case "prop":
-    case "template":
-    case "yields":
-    case "yield":
-    case "summary":
-    case "description":
-    case "desc":
-    case "todo":
-    case "emits":
-    case "fires":
-    case "listens":
-    case "readonly":
-    case "async":
-    case "override":
-      return true;
-    default:
-      return false;
-  }
+  return SUPPORTED_TAG_SET.has(value);
 }
 
 /**
- * Purpose: Parse one @param block.
- * Why: Supports both regular parameters and generic type parameters (@param <T> ...).
+ * 解析单个 @param 块。
+ * 设计原因：同时支持普通参数和泛型类型参数（@param <T> ...）。
  */
 /**
  * 从 JSDoc 标签内容中提取 {type} 语法
@@ -476,18 +452,29 @@ function parseParamTag(
   const effectiveContent = jsdocType?.rest ?? content;
   const jsdocTypeStr = jsdocType?.type;
 
-  const match = /^(<\s*[A-Za-z_$][\w$]*\s*>|[A-Za-z_$][\w$]*)\s*(.*)$/s.exec(
-    effectiveContent,
-  );
+  // 支持：普通名（name）/ 泛型参数（<T>）/ 点分路径（props.containerRef）/
+  // 可选参数（[props.orientation='vertical']，去括号与默认值）
+  const match =
+    /^(<\s*[A-Za-z_$][\w$]*\s*>|\[?[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*(?:=[^\]]*)?\]?)\s*(.*)$/s.exec(
+      effectiveContent,
+    );
   if (!match) {
     return null;
   }
 
-  const rawName = (match[1] ?? "").replace(/\s+/g, "");
+  let rawName = (match[1] ?? "").replace(/\s+/g, "");
+  const isTypeParameter = rawName.startsWith("<") && rawName.endsWith(">");
+  if (!isTypeParameter && rawName.startsWith("[")) {
+    // 可选参数 [name=default]：去括号与默认值，保留点分路径
+    rawName = rawName.slice(1, rawName.endsWith("]") ? -1 : undefined);
+    const eqIdx = rawName.indexOf("=");
+    if (eqIdx >= 0) {
+      rawName = rawName.slice(0, eqIdx);
+    }
+  }
   // 去掉 JSDoc 描述前导连字符：name - description → description
   const description = (match[2] ?? "").replace(/^\s*-\s*/, "").trim();
 
-  const isTypeParameter = rawName.startsWith("<") && rawName.endsWith(">");
   const type = isTypeParameter
     ? "type-parameter"
     : (jsdocTypeStr ?? paramTypes.get(rawName) ?? "unknown");
@@ -500,7 +487,7 @@ function parseParamTag(
 }
 
 /**
- * Purpose: Parse one @throws/@exception block.
+ * 解析单个 @throws/@exception 块。
  */
 function parseThrowsTag(content: string): ThrowsTag | null {
   const match = /^([\w.]+)\s*(.*)$/s.exec(content);
@@ -515,11 +502,11 @@ function parseThrowsTag(content: string): ThrowsTag | null {
 }
 
 /**
- * Purpose: Parse parameter name -> type mapping from method signature.
- * Why: Enrich @param tags with concrete parameter types.
+ * 从方法签名解析参数名 → 类型映射。
+ * 设计原因：用具体参数类型丰富 @param 标签。
  */
 function parseSignatureParams(signature: string): Map<string, string> {
-  //result map : name -> type
+  // 结果映射：name -> type
   const result = new Map<string, string>();
   const paramsText = extractParenContent(signature);
 
@@ -541,8 +528,31 @@ function parseSignatureParams(signature: string): Map<string, string> {
       continue;
     }
 
-    const type = cleaned.slice(0, lastSpace).trim();
-    const name = cleaned.slice(lastSpace + 1).trim();
+    let type = cleaned.slice(0, lastSpace).trim();
+    let name = cleaned.slice(lastSpace + 1).trim();
+
+    // TS 风格 "name: type"：lastSpace 分割会把 "name:" 当类型、"string" 当名字，
+    // 冒号前才是参数名（C++ 作用域符 "::" 不以单冒号结尾，不受影响）
+    const tsColonType = /^([A-Za-z_$][\w$]*)\s*:\s*$/.exec(type);
+    if (tsColonType && name) {
+      const realName = tsColonType[1] ?? "";
+      const realType = name; // lastSpace 分割出的后半段才是类型
+      name = realName;
+      type = realType;
+    }
+
+    // C 系指针/引用：`int *ptr` → 星号属于类型而非变量名
+    const ptrMatch = /^[*&]+/.exec(name);
+    if (ptrMatch) {
+      type = `${type} ${ptrMatch[0]}`.trim();
+      name = name.slice(ptrMatch[0].length).trim();
+    }
+    // C 系数组：`int arr[10]` → 下标属于类型
+    const bracketIdx = name.indexOf("[");
+    if (bracketIdx > 0) {
+      type = `${type} ${name.slice(bracketIdx)}`.trim();
+      name = name.slice(0, bracketIdx).trim();
+    }
 
     if (!name || !type) {
       continue;
@@ -555,8 +565,8 @@ function parseSignatureParams(signature: string): Map<string, string> {
 }
 
 /**
- * Purpose: Extract content inside the first top-level (...) pair.
- * @example : "public void foo(int x, String y)" -> "int x, String y"
+ * 提取第一个顶层 (...) 配对内的内容。
+ * @example "public void foo(int x, String y)" -> "int x, String y"
  */
 function extractParenContent(signature: string): string | null {
   const openParen = signature.indexOf("(");
@@ -566,7 +576,7 @@ function extractParenContent(signature: string): string | null {
 
   const closeParen = findMatchingIndex(signature, openParen, "(", ")");
   if (closeParen < 0) {
-    // Graceful fallback for truncated signatures.
+    // 对截断的签名做优雅回退。
     const tail = signature.slice(openParen + 1).trim();
     return tail || null;
   }
@@ -576,8 +586,8 @@ function extractParenContent(signature: string): string | null {
 }
 
 /**
- * Purpose: Remove leading annotations/modifiers from one parameter declaration.
- * Example: "@NotNull final String name" -> "String name"
+ * 移除单个参数声明前的注解/修饰符。
+ * @example "@NotNull final String name" -> "String name"
  */
 function stripAnnotationsAndModifiers(paramDecl: string): string {
   let remaining = paramDecl;
@@ -611,24 +621,24 @@ function stripAnnotationsAndModifiers(paramDecl: string): string {
 }
 
 /**
- * Purpose: Remove one leading annotation token.
- * Supports:
+ * 移除一个前导注解 token。
+ * 支持：
  * - @NotNull
  * - @RequestParam("id")
  */
 function stripLeadingAnnotation(text: string): string {
-  // 1) Skip "@AnnotationName" (including package path).
-  let index = 1; // skip '@'
+  // 1) 跳过 "@AnnotationName"（含包路径）。
+  let index = 1; // 跳过 '@'
   while (index < text.length && /[\w.]/.test(text[index] ?? "")) {
     index++;
   }
 
-  // 2) Optional spaces between annotation name and '('.
+  // 2) 注解名和 '(' 之间可能有空格。
   while (index < text.length && /\s/.test(text[index] ?? "")) {
     index++;
   }
 
-  // 3) Skip optional annotation arguments "(...)"
+  // 3) 跳过可选的注解参数 "(...)"
   if (text[index] === "(") {
     const closeParen = findMatchingIndex(text, index, "(", ")");
     if (closeParen < 0) {
@@ -641,9 +651,9 @@ function stripLeadingAnnotation(text: string): string {
 }
 
 /**
- * Purpose: Split by commas only at top level.
- * Why: Generic arguments can contain commas.
- * @example: "Map<String, List<Integer>>, int[]" -> ["Map<String, List<Integer>>", "int[]"]
+ * 仅在顶层按逗号分割。
+ * 设计原因：泛型参数中可能包含逗号。
+ * @example "Map<String, List<Integer>>, int[]" -> ["Map<String, List<Integer>>", "int[]"]
  */
 function splitByTopLevelComma(paramsText: string): string[] {
   const result: string[] = [];
@@ -652,25 +662,25 @@ function splitByTopLevelComma(paramsText: string): string[] {
   let parenDepth = 0;
 
   for (const ch of paramsText) {
-    //enter the generic layer
+    // 进入泛型层
     if (ch === "<") {
       angleDepth++;
       current += ch;
       continue;
     }
-    //exit the generic layer
+    // 退出泛型层
     if (ch === ">") {
       angleDepth = Math.max(0, angleDepth - 1);
       current += ch;
       continue;
     }
-    //enter parentheses level
+    // 进入括号层
     if (ch === "(") {
       parenDepth++;
       current += ch;
       continue;
     }
-    //exit parentheses level
+    // 退出括号层
     if (ch === ")") {
       parenDepth = Math.max(0, parenDepth - 1);
       current += ch;
@@ -681,7 +691,7 @@ function splitByTopLevelComma(paramsText: string): string[] {
       current = "";
       continue;
     }
-    //accumulate of ordinary character
+    // 累积普通字符
     current += ch;
   }
 
@@ -693,12 +703,12 @@ function splitByTopLevelComma(paramsText: string): string[] {
 }
 
 /**
- * Purpose: Parse return type from method signature.
- * Why: @return tag should include concrete return type for UI display.
+ * 从方法签名解析返回类型。
+ * 设计原因：@return 标签应包含具体返回类型供 UI 展示。
  *
- * Note:
- * - Constructor-like signatures fallback to "void".
- * @example : "public List<String> getItems()" -> "List<String>"
+ * 注意：
+ * - 类构造函数式签名回退为 "void"。
+ * @example "public List<String> getItems()" -> "List<String>"
  */
 function parseReturnType(signature: string): string {
   const cleanSignature = signature.replace(/\{[\s\S]*$/, "").trim();
@@ -708,21 +718,23 @@ function parseReturnType(signature: string): string {
     "",
   );
 
-  // Expected: "<ReturnType> <methodName>(...)"
-  const match = /^([A-Za-z_$][\w$<>\[\].?,\s]*?)\s+[A-Za-z_$][\w$]*\s*\(/.exec(
-    withoutModifiers,
-  );
-
-  if (match?.[1]) {
-    return match[1].trim();
+  // 取 '(' 前的内容，去掉末尾的方法名，剩余即返回类型。
+  // 比正则匹配更稳健：类型可含空格（如 "int *"、"const char *"）
+  const openParen = withoutModifiers.indexOf("(");
+  if (openParen < 0) {
+    return "void";
   }
-
-  return "void";
+  let beforeParen = withoutModifiers.substring(0, openParen).trim();
+  const nameMatch = /([A-Za-z_$][\w$]*)\s*$/.exec(beforeParen);
+  if (nameMatch) {
+    beforeParen = beforeParen.slice(0, nameMatch.index).trim();
+  }
+  return beforeParen || "void";
 }
 
 /**
- * Purpose: Remove method-level generic declaration.
- * Example: "public <T> T convert(...)" -> "public T convert(...)"
+ * 移除方法级的泛型声明。
+ * @example "public <T> T convert(...)" -> "public T convert(...)"
  */
 function removeMethodGenericDecl(signature: string): string {
   const openAngle = signature.indexOf("<");
@@ -739,7 +751,7 @@ function removeMethodGenericDecl(signature: string): string {
 
   const afterGeneric = signature.slice(closeAngle + 1).trimStart();
 
-  // Heuristic: after generic must start with "Type methodName("
+  // 启发式判断：泛型后必须以 "Type methodName(" 开头
   if (
     /^[A-Za-z_$][\w$<>\[\].?,\s]*\s+[A-Za-z_$][\w$]*\s*\(/.test(afterGeneric)
   ) {
@@ -750,8 +762,8 @@ function removeMethodGenericDecl(signature: string): string {
 }
 
 /**
- * Purpose: Find matching close token for an opening token at startIndex.
- * @returns Matched close index, or -1 if unmatched.
+ * 查找 startIndex 处开 token 的匹配闭 token。
+ * @returns 匹配的闭 token 索引，未匹配返回 -1。
  */
 function findMatchingIndex(
   text: string,

@@ -1,15 +1,18 @@
 /**
  * sidebar.css - Webview 侧边栏样式
  *
- * 【布局结构】
+ * **布局结构：**
  * #root
  *   .header              — 类信息 + 作者 + 切换按钮
- *   .member-groups        — 分组容器
- *     .member-group       — 单个分组（构造函数 / 方法 / 字段）
- *       .group-header     — 分组标题（可折叠）
- *       .group-content    — 分组内容
- *         .method-item    — 方法/构造函数条目
- *         .field-item     — 字段/枚举常量条目
+ *   .member-groups        — 类型卡片容器
+ *     .type-group         — 单个类型卡片（class/interface/enum/Unknown）
+ *       .type-group-header — 卡片标题（可折叠）
+ *       .type-group-content — 卡片内容
+ *         .source-order-list — 成员列表（源码顺序，无子分组）
+ *           .method-item / .field-item — 成员条目（带类型徽章）
+ *
+ * @author xiaowu
+ * @since 2026/02/04
  */
 
 /* ========== 基础重置 ========== */
@@ -249,113 +252,28 @@ body {
   height: 16px;
 }
 
-/* ========== 分组 ========== */
+/* ========== 类型卡片容器 ========== */
 .member-groups {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   margin-top: 14px;
 }
 
-.member-group {
-  border: 1px solid var(--vscode-widget-border);
-  border-radius: 6px;
-}
-
-.group-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  min-height: 35px;
-  cursor: pointer;
-  user-select: none;
-  background: var(--vscode-editor-background);
-  border-bottom: 1px solid var(--vscode-widget-border);
-  border-radius: 5px 5px 0 0;
-  transition: background-color 0.1s ease;
-  position: sticky;
-  top: 35px;
-  z-index: 20;
-}
-
-/* 分组头部在类型组内 → 驻留在类型组头部下方 */
-.type-group-content .group-header {
-  top: 75px;
-}
-
-.group-header:hover {
-  background: var(--vscode-list-hoverBackground);
-}
-
-.group-collapse-icon {
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  opacity: 0.7;
-  transition: transform 0.15s ease;
-}
-
-.group-collapse-icon svg {
-  width: 12px;
-  height: 12px;
-}
-
-.member-group.collapsed .group-collapse-icon {
-  transform: rotate(-90deg);
-}
-
-.member-group.collapsed .group-content {
-  display: none;
-}
-
-.member-group.collapsed .group-header {
-  border-bottom: none;
-  border-radius: 5px;
-}
-
-.group-icon {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  color: var(--vscode-textLink-foreground);
-  opacity: 0.85;
-}
-
-.group-icon svg {
-  width: 14px;
-  height: 14px;
-}
-
-.group-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--vscode-foreground);
-  letter-spacing: 0.3px;
-}
-
-.group-count {
-  font-size: 10px;
-  padding: 0 5px;
-  border-radius: 8px;
-  background: var(--vscode-badge-background);
-  color: var(--vscode-badge-foreground);
-  font-weight: 500;
-  margin-left: auto;
-}
-
-.group-content {
+/* ========== 源码顺序成员列表（无子分组） ========== */
+.source-order-list {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 0 6px 6px;
 }
 
-.group-content.compact-mode {
+.source-order-list.compact-mode {
   gap: 6px;
+}
+
+.type-group-content .source-order-list {
+  padding: 0;
 }
 
 /* ========== 类型图标（通用） ========== */
@@ -371,24 +289,54 @@ body {
   height: 14px;
 }
 
-/* ========== 简洁模式样式 ========== */
-.method-item.compact {
-  padding: 10px 12px;
-  cursor: pointer;
-  border-radius: 4px;
+/* ========== 类型图标颜色区分 ========== */
+.item-kind-icon.icon-constructor {
+  color: #d4a017;
+  opacity: 1;
+}
+
+.item-kind-icon.icon-method {
+  color: #3794ff;
+  opacity: 1;
+}
+
+.item-kind-icon.icon-field {
+  color: #1b8044;
+  opacity: 1;
+}
+
+.item-kind-icon.icon-enum {
+  color: var(--vscode-symbolIcon-enumeratorForeground, var(--vscode-badge-foreground));
+  opacity: 1;
+}
+
+/* ========== 成员卡片基础样式（方法/字段/枚举共用） ========== */
+.method-item.compact,
+.method-item.detail,
+.field-item {
   background: var(--vscode-editor-background);
   border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  cursor: pointer;
   transition: all 0.1s ease;
 }
 
-.method-item.compact:hover {
+/* hover 底色统一（详细模式卡片 hover 由 header/content 叠加高亮，见详细模式样式） */
+.method-item.compact:hover,
+.field-item:hover {
   background-color: var(--vscode-list-hoverBackground);
-  border-color: var(--vscode-widget-border);
 }
 
-.method-item.compact.active {
+/* 焦点色条 + 选中底色统一（详细模式卡片因 header/content 分体绘制色条，见详细模式样式） */
+.method-item.compact.active,
+.field-item.active {
   background-color: var(--vscode-list-activeSelectionBackground);
-  border-left: 3px solid var(--vscode-textLink-foreground);
+  box-shadow: inset 3px 0 0 var(--vscode-textLink-foreground);
+}
+
+/* ========== 简洁模式样式 ========== */
+.method-item.compact {
+  padding: 10px 12px;
 }
 
 .method-compact-header {
@@ -403,6 +351,9 @@ body {
   font-size: 13px;
   color: var(--vscode-textLink-foreground);
   flex: 1;
+  /* flex:1 需配合 min-width:0 才能正确收缩换行，否则长方法名撑破容器 */
+  min-width: 0;
+  word-break: break-word;
 }
 
 .method-compact-meta {
@@ -427,6 +378,10 @@ body {
 
 .meta-value {
   font-family: var(--vscode-editor-font-family);
+  /* flex item 默认 min-width:auto 会导致长类型名撑破容器溢出卡片 */
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .meta-value.type-value {
@@ -449,22 +404,12 @@ body {
 }
 
 /* ========== 详细模式样式 ========== */
-.method-item.detail {
-  background-color: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-widget-border);
-  border-radius: 4px;
-  transition: border-color 0.15s ease;
-  cursor: pointer;
-}
-
 .method-item.detail:hover {
   border-color: var(--vscode-focusBorder);
 }
 
-.method-item.detail.active {
-  box-shadow: inset 3px 0 0 var(--vscode-textLink-foreground);
-  background-color: var(--vscode-list-activeSelectionBackground);
-}
+/* 焦点卡片：色条由 header / content 各自绘制（见下），父级不再设阴影，
+   避免 header 不透明背景盖住父级阴影后与 content 透出的色条产生视觉差异 */
 
 .method-header {
   display: flex;
@@ -472,54 +417,117 @@ body {
   padding: 10px 12px;
   cursor: pointer;
   user-select: none;
+  transition: background-color 0.1s ease;
+  /* 头部始终自带不透明背景：折叠/展开、焦点/普通状态均不透出父级颜色，
+     避免 active 折叠卡片头部透出蓝色（点击全蓝问题） */
+  background-color: var(--vscode-editor-background);
+  /* 与卡片 border-radius 一致：折叠时头部占据整卡高度，左侧焦点色条
+     跟随头部圆角，避免直角色条在圆角卡片上突兀（展开时被下方 sticky
+     规则的 4px 4px 0 0 覆盖，不受影响） */
+  border-radius: 4px;
 }
 
-.method-header:hover {
-  background-color: var(--vscode-list-hoverBackground);
+/* hover 统一：悬停卡片任意部位（头部或文档区）时，整个卡片一起灰色高亮。
+   .method-header 是 sticky 且自带不透明背景，父级 inset 阴影会被其盖住，
+   故同时作用于 .method-header 与 .method-content。
+   非焦点卡片 hover 显示灰色；焦点卡片（active）hover 时保持选中底色
+   （见 .method-item.detail.active:hover 规则，与简洁模式/字段行为一致）。 */
+.method-item.detail:hover .method-header,
+.method-item.detail:hover .method-content {
+  box-shadow: inset 0 0 0 9999px var(--vscode-list-hoverBackground);
 }
 
-/* 展开的方法头部驻留显示 —— 滚动时固定在分组头部下方 */
-.method-item.detail:not(.collapsed) .method-header {
+/* 展开的方法头部驻留显示 —— 滚动时固定在类型组头部下方。
+   background-color 已在 .method-header 基类统一提供（不透明），此处不重复。
+   不使用 border-bottom：inset 色条/选中底色被裁剪到 padding box，border-bottom
+   会在 header/content 交界处留出 1px 灰缝，割断左侧焦点色条。改用 ::after 绘制
+   分隔线并避让左侧 3px 色条区域，使 active 色条与简洁模式整卡色条连续一致。
+   no-comment 卡片无内容、不可展开，豁免展开态（保持整卡 4px 圆角、不 sticky） */
+.method-item.detail:not(.collapsed):not(.no-comment) .method-header {
   position: sticky;
   top: 70px;
   z-index: 10;
-  background-color: var(--vscode-editor-background);
-  border-bottom: 1px solid var(--vscode-widget-border);
-  border-radius: 3px 3px 0 0;
+  border-radius: 4px 4px 0 0;
 }
 
-/* 焦点卡片头部高亮 —— 与卡片体保持一致（含左边缘色条） */
+/* header/content 分隔线：替代原 border-bottom，从色条右侧起绘（避让左侧 3px
+   焦点色条），保持色条与选中底色在交界处连续。no-comment 卡片无内容下方，不绘制 */
+.method-item.detail:not(.collapsed):not(.no-comment) .method-header::after {
+  content: '';
+  position: absolute;
+  left: 3px;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: var(--vscode-widget-border);
+}
+
+/* 展开状态注释区底部圆角：与卡片 border-radius 一致（4px），裁剪子元素溢出卡片底部圆角，
+   并与简洁模式整卡 4px 圆角保持一致 */
+.method-item.detail:not(.collapsed) .method-content {
+  border-radius: 0 0 4px 4px;
+  overflow: hidden;
+}
+
+/* 焦点卡片：左边缘色条 + 焦点底色，header 与 content 各自绘制、位置一致，
+   与简洁模式/字段的 active 视觉（选中底色 + 色条）保持一致。
+   注意 box-shadow 列表中先列的阴影绘制在最上层：色条必须排在选中底色之前，
+   否则 9999px 的选中底色会盖住 3px 色条，导致详细模式完全看不到色条 */
 .method-item.detail.active .method-header,
-.method-item.detail.active:not(.collapsed) .method-header {
-  background-color: var(--vscode-list-activeSelectionBackground);
-  box-shadow: inset 3px 0 0 var(--vscode-textLink-foreground);
+.method-item.detail.active .method-content {
+  box-shadow:
+    inset 3px 0 0 var(--vscode-textLink-foreground),
+    inset 0 0 0 9999px var(--vscode-list-activeSelectionBackground);
 }
 
-/* 方法头部在类型组内 → 驻留在类型组头部 + 分组头部下方 */
-.type-group-content .method-item.detail:not(.collapsed) .method-header {
-  top: 110px;
+/* active 卡片 hover：保持焦点底色（与简洁模式/字段一致，hover 不覆盖焦点底色） */
+.method-item.detail.active:hover .method-header,
+.method-item.detail.active:hover .method-content {
+  box-shadow:
+    inset 3px 0 0 var(--vscode-textLink-foreground),
+    inset 0 0 0 9999px var(--vscode-list-activeSelectionBackground);
 }
 
 .collapse-icon {
-  width: 16px;
-  height: 16px;
-  margin-right: 10px;
+  /* 容器 24x24 提供充足点击区域，svg 12px 居中保持视觉精巧 */
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--vscode-foreground);
   opacity: 0.7;
-  transition: transform 0.15s ease;
+  cursor: pointer;
+  border-radius: 4px;
+  /* 旋转仅作用于内部 svg 图标，容器本身不旋转（hover 背景保持稳定） */
+  transition: background-color 0.1s ease, opacity 0.1s ease;
+}
+
+.collapse-icon:hover {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.1));
 }
 
 .collapse-icon svg {
   width: 12px;
   height: 12px;
+  pointer-events: none;
+  transition: transform 0.15s ease;
 }
 
-.method-item.collapsed .collapse-icon {
+.method-item.collapsed .collapse-icon svg {
   transform: rotate(-90deg);
+}
+
+/* 无注释卡片的占位符：与 .collapse-icon 同尺寸以保持方法名左对齐，
+   但无图标、无 hover、不可点击（点击落到 header 走跳转逻辑） */
+.collapse-spacer {
+  width: 24px;
+  height: 24px;
+  margin-right: 6px;
+  flex-shrink: 0;
 }
 
 .method-info {
@@ -531,6 +539,8 @@ body {
   font-weight: 600;
   color: var(--vscode-textLink-foreground);
   word-break: break-word;
+  /* 处于 flex 容器 .method-name-row 中，需 min-width:0 才能正确收缩换行 */
+  min-width: 0;
 }
 
 .method-name-row {
@@ -556,16 +566,24 @@ body {
 .detail-label {
   color: var(--vscode-descriptionForeground);
   min-width: 35px;
+  flex-shrink: 0;
 }
 
 .detail-type {
   font-family: var(--vscode-editor-font-family);
   color: var(--vscode-symbolIcon-classForeground);
+  /* flex item 默认 min-width:auto 会导致长类型名撑破容器溢出卡片 */
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .detail-params {
   font-family: var(--vscode-editor-font-family);
   color: var(--vscode-symbolIcon-variableForeground);
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .method-signature {
@@ -579,7 +597,7 @@ body {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
-  margin-left: 8px;
+  margin-left: auto;
   flex-shrink: 0;
   background-color: var(--vscode-badge-background);
   color: var(--vscode-badge-foreground);
@@ -605,20 +623,6 @@ body {
 /* ========== 字段/枚举常量样式 ========== */
 .field-item {
   padding: 8px 10px;
-  cursor: pointer;
-  border-radius: 4px;
-  background: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-widget-border);
-  transition: all 0.1s ease;
-}
-
-.field-item:hover {
-  background-color: var(--vscode-list-hoverBackground);
-}
-
-.field-item.active {
-  box-shadow: inset 3px 0 0 var(--vscode-textLink-foreground);
-  background-color: var(--vscode-list-activeSelectionBackground);
 }
 
 .field-header {
@@ -685,11 +689,8 @@ body {
   margin-bottom: 0;
 }
 
-/* 枚举常量：微妙的视觉区分 */
-.field-item.enum-constant {
-  border-left: 2px solid
-    var(--vscode-symbolIcon-enumeratorMemberForeground);
-}
+/* 枚举常量：名称用枚举色（.field-name.enum-name），不再额外绘制常驻色条，
+   与其它成员卡片一致：仅聚焦时显示左边缘色条 */
 
 /* ========== 标签表格 ========== */
 .tag-section {
@@ -713,11 +714,14 @@ body {
   width: 100%;
   border-collapse: collapse;
   font-size: 12px;
+  /* fixed 布局：列宽严格遵循 th 的 width 比例，防止长内容撑破表格 */
+  table-layout: fixed;
 }
 
 /* 表格横向滚动容器 —— 防止过长内容撑破布局 */
 .table-wrapper {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 .tag-table th,
@@ -735,18 +739,19 @@ body {
 
 .tag-table td {
   vertical-align: top;
+  /* 长类型名 / URL / 连续字符换行，避免撑破单元格溢出卡片 */
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .tag-table .type-cell {
   font-family: var(--vscode-editor-font-family);
   color: var(--vscode-symbolIcon-classForeground);
-  white-space: nowrap;
 }
 
 .tag-table .name-cell {
   font-family: var(--vscode-editor-font-family);
   color: var(--vscode-symbolIcon-variableForeground);
-  white-space: nowrap;
 }
 
 /* ========== 其他标签 ========== */
@@ -979,7 +984,7 @@ body {
   color: var(--vscode-textLink-foreground);
   text-decoration: underline;
   text-decoration-style: dotted;
-  cursor: help;
+  cursor: pointer;
   outline: none;
   transition: color 0.15s ease;
 }
@@ -1000,6 +1005,65 @@ body {
   background-color: var(--vscode-textCodeBlock-background, var(--vscode-editor-lineHighlightBackground));
   padding: 1px 4px;
   border-radius: 3px;
+}
+
+/* ========== 调试面板 ========== */
+.debug-panel {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 60%;
+  z-index: 9999;
+  background-color: var(--vscode-editor-background);
+  border-top: 2px solid var(--vscode-textLink-foreground);
+  display: flex;
+  flex-direction: column;
+}
+
+.debug-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background-color: var(--vscode-sideBar-background);
+  border-bottom: 1px solid var(--vscode-widget-border);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--vscode-descriptionForeground);
+}
+
+.debug-panel-header button {
+  background: transparent;
+  border: none;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+
+.debug-panel-header button:hover {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.1));
+}
+
+#debug-content {
+  /* flex 子项填满面板剩余高度，内容超出时内部滚动（min-height: 0 解除 flex 收缩限制） */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--vscode-foreground);
 }
 
 /* ========== @doc 设计原理 ========== */
@@ -1065,6 +1129,28 @@ body {
   white-space: nowrap;
 }
 
+/* KaTeX 未加载时公式降级为源码样式（与 Mermaid 源码兜底观感一致）。
+   降级仅加类不改结构：KaTeX 就绪后 __renderMath 会移除该类并正常渲染 */
+.md-math-block.md-math-fallback {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 13px;
+  line-height: 1.5;
+  background-color: var(--vscode-textCodeBlock-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.md-math-inline.md-math-fallback {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 13px;
+  background-color: var(--vscode-textCodeBlock-background);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
 /* ========== Mermaid 图表 ========== */
 .md-mermaid {
   background-color: var(--vscode-editor-background);
@@ -1078,6 +1164,130 @@ body {
 
 .md-mermaid .mermaid {
   font-family: var(--vscode-editor-font-family);
+}
+
+/* Mermaid 未加载时图表降级为源码样式（与放大预览的源码兜底观感一致）。
+   仅加类不改结构：mermaid 就绪后 __renderMermaid 会移除该类并渲染为 SVG */
+.md-mermaid.md-mermaid-fallback .mermaid {
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--vscode-editor-foreground);
+  background-color: var(--vscode-textCodeBlock-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+/* vendor 组件（KaTeX / Mermaid / highlight.js）加载失败的一次性提示条 */
+.vendor-error-notice {
+  position: fixed;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 90%;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--vscode-notifications-foreground);
+  background-color: var(--vscode-notifications-background);
+  border: 1px solid var(--vscode-notifications-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.vendor-error-close {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+/* Mermaid SVG 文字颜色适配深浅色 —— !important 覆盖 mermaid 内联样式。
+   同时作用于 .preview-content（全屏预览层内 mermaid.render 生成的 SVG 不在
+   .md-mermaid 容器内，需同套主题覆盖，保证预览内外渲染效果一致） */
+.md-mermaid .mermaid svg text,
+.preview-content svg text {
+  fill: var(--vscode-editor-foreground) !important;
+  color: var(--vscode-editor-foreground) !important;
+}
+
+.md-mermaid .mermaid svg .node rect,
+.md-mermaid .mermaid svg .node circle,
+.md-mermaid .mermaid svg .node ellipse,
+.md-mermaid .mermaid svg .node polygon,
+.md-mermaid .mermaid svg .node path,
+.preview-content svg .node rect,
+.preview-content svg .node circle,
+.preview-content svg .node ellipse,
+.preview-content svg .node polygon,
+.preview-content svg .node path {
+  stroke: var(--vscode-widget-border) !important;
+}
+
+/* Mermaid 连线与箭头：用主前景色（高对比），避免 descriptionForeground 过淡看不清。
+   mermaid@10 中 flowchart 连线类名是 path.flowchart-link（.edgePath .path 仅旧版），
+   两者都覆盖，保证连线颜色与 mermaid 主题解耦，深色模式下不再出现黑色箭头。 */
+.md-mermaid .mermaid svg .edgePath path,
+.md-mermaid .mermaid svg path.flowchart-link,
+.md-mermaid .mermaid svg .marker,
+.preview-content svg .edgePath path,
+.preview-content svg path.flowchart-link,
+.preview-content svg .marker {
+  stroke: var(--vscode-editor-foreground) !important;
+  stroke-width: 1.5px !important;
+}
+
+.md-mermaid .mermaid svg .edgeLabel,
+.preview-content svg .edgeLabel {
+  background-color: var(--vscode-editor-background) !important;
+  color: var(--vscode-editor-foreground) !important;
+}
+
+.md-mermaid .mermaid svg .edgeLabel rect,
+.preview-content svg .edgeLabel rect {
+  fill: var(--vscode-editor-background) !important;
+}
+
+.md-mermaid .mermaid svg .cluster rect,
+.preview-content svg .cluster rect {
+  stroke: var(--vscode-widget-border) !important;
+  fill: var(--vscode-editor-background) !important;
+}
+
+.md-mermaid .mermaid svg .label,
+.preview-content svg .label {
+  color: var(--vscode-editor-foreground) !important;
+}
+
+/* ===== sequenceDiagram 序列图 =====
+   消息线（实线 .messageLine0 / 虚线 .messageLine1）与箭头头（.arrowMarkerPath）
+   用主前景色覆盖，避免深色主题下 mermaid 默认信号线偏黑看不清。 */
+.md-mermaid .mermaid svg .messageLine0,
+.md-mermaid .mermaid svg .messageLine1,
+.preview-content svg .messageLine0,
+.preview-content svg .messageLine1 {
+  stroke: var(--vscode-editor-foreground) !important;
+  stroke-width: 1.5px !important;
+}
+
+.md-mermaid .mermaid svg .arrowMarkerPath,
+.preview-content svg .arrowMarkerPath {
+  fill: var(--vscode-editor-foreground) !important;
+}
+
+.md-mermaid .mermaid svg .actor-line,
+.preview-content svg .actor-line {
+  stroke: var(--vscode-widget-border) !important;
 }
 
 /* ========== @example 示例 ========== */
@@ -1110,14 +1320,11 @@ body {
 }
 
 .example-section-content {
-  font-family: var(--vscode-editor-font-family);
-  font-size: var(--vscode-editor-font-size, 12px);
-  line-height: 1.5;
-  color: var(--vscode-foreground);
-  white-space: pre-wrap;
-  word-break: break-word;
   margin: 0;
-  overflow-x: auto;
+}
+
+.example-section-content > :last-child {
+  margin-bottom: 0;
 }
 
 /* ========== 类型组（多类型文件的类型容器） ========== */
@@ -1145,27 +1352,43 @@ body {
   z-index: 30;
 }
 
+/*
+ * 用 inset box-shadow 叠加半透明高亮，保持 background-color 始终不透明。
+ * 如果直接把 background 换成 list-hoverBackground（多数主题是半透明），
+ * sticky 驻留时会透出下方滚动的子卡片，出现"滚动滞留时透过标题栏看到子内容"的视觉瑕疵。
+ */
 .type-group-header:hover {
-  background: var(--vscode-list-hoverBackground);
+  box-shadow: inset 0 0 0 9999px var(--vscode-list-hoverBackground);
 }
 
 .type-collapse-icon {
-  width: 14px;
-  height: 14px;
+  /* 容器 24x24 提供充足点击区域，svg 12px 居中保持视觉精巧 */
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   opacity: 0.7;
-  transition: transform 0.15s ease;
+  cursor: pointer;
+  border-radius: 4px;
+  /* 旋转仅作用于内部 svg 图标，容器本身不旋转（hover 背景保持稳定） */
+  transition: background-color 0.1s ease, opacity 0.1s ease;
+}
+
+.type-collapse-icon:hover {
+  opacity: 1;
+  background-color: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.1));
 }
 
 .type-collapse-icon svg {
   width: 12px;
   height: 12px;
+  pointer-events: none;
+  transition: transform 0.15s ease;
 }
 
-.type-group.collapsed .type-collapse-icon {
+.type-group.collapsed .type-collapse-icon svg {
   transform: rotate(-90deg);
 }
 
@@ -1227,13 +1450,26 @@ body {
   margin-bottom: 4px;
 }
 
-.type-group-content .member-group {
-  border: none;
-  border-radius: 0;
+/* ========== Unknown 类型组 —— 与真实类型卡片共享样式，仅内容不同 ========== */
+
+/* 散落卡片：隐藏类型图标和名称，显示统计描述 */
+.type-group-unknown .type-icon,
+.type-group-unknown .type-name {
+  display: none;
 }
 
-.type-group-content .member-group .group-header {
-  border-radius: 0;
+.type-group-unknown .type-meta {
+  display: inline-block;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.8;
+  letter-spacing: 0.3px;
+}
+
+/* 类卡片：隐藏统计描述 */
+.type-group:not(.type-group-unknown) .type-meta {
+  display: none;
 }
 
 /* ========== 类分隔线 ========== */
@@ -1378,6 +1614,15 @@ body {
   display: block;
 }
 
+/* 覆盖 highlight.js 主题 CSS（vs2015/github/catppuccin 等）的 .hljs 默认样式：
+   - padding: 1em → 0（padding 统一由 pre.md-code-block 提供，避免双重内边距）
+   - background → transparent（背景统一由 pre.md-code-block 的 VS Code 主题变量提供）
+   token 颜色仍由 highlight.js 主题 CSS 提供，仅重置布局与背景 */
+.md-code-block code.hljs {
+  padding: 0;
+  background: transparent;
+}
+
 /* 代码高亮 */
 .md-java-keyword {
   color: var(--vscode-symbolIcon-keywordForeground);
@@ -1421,6 +1666,42 @@ body {
   background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
   border-radius: 0 4px 4px 0;
 }
+
+/* GitHub-style callout（> [!NOTE] / [!WARNING] 等） */
+.md-callout {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 3px solid;
+  border-radius: 0 4px 4px 0;
+  background-color: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.08));
+  overflow-x: auto;
+}
+
+.md-callout-title {
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.md-callout-body > :first-child { margin-top: 0; }
+.md-callout-body > :last-child { margin-bottom: 0; }
+
+.md-callout-note { border-left-color: var(--vscode-textLink-foreground); }
+.md-callout-note .md-callout-title { color: var(--vscode-textLink-foreground); }
+
+.md-callout-tip { border-left-color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
+.md-callout-tip .md-callout-title { color: var(--vscode-gitDecoration-addedResourceForeground, #73c991); }
+
+.md-callout-important { border-left-color: var(--vscode-symbolIcon-classForeground, #dcdcaa); }
+.md-callout-important .md-callout-title { color: var(--vscode-symbolIcon-classForeground, #dcdcaa); }
+
+.md-callout-warning { border-left-color: var(--vscode-editorWarning-foreground, #cca700); }
+.md-callout-warning .md-callout-title { color: var(--vscode-editorWarning-foreground, #cca700); }
+
+.md-callout-caution { border-left-color: var(--vscode-editorError-foreground, #f48771); }
+.md-callout-caution .md-callout-title { color: var(--vscode-editorError-foreground, #f48771); }
 
 .md-list {
   padding-left: 24px;
@@ -1490,6 +1771,7 @@ body {
 .md-link {
   color: var(--vscode-textLink-foreground);
   text-decoration: none;
+  cursor: pointer;
   outline: none;
   transition: color 0.15s ease;
 }
@@ -1524,4 +1806,202 @@ body {
 
 .markdown-body del {
   text-decoration: line-through;
+}
+
+/* ========== 内容放大预览（全屏遮罩） ==========
+   点击图片 / 双击图表、表格、代码块后弹出全屏遮罩层，
+   支持滚轮缩放（以鼠标为中心）、拖拽平移，Esc / 按钮退出。
+   覆盖整个侧边栏视口，打开期间屏蔽侧边栏其他交互。 */
+#preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(0, 0, 0, 0.82);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+/* 浅色模式：浅色遮罩 + 柔和按钮 */
+body.vscode-light #preview-overlay {
+  background: rgba(255, 255, 255, 0.85);
+}
+
+body.vscode-light .preview-btn {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+body.vscode-light .preview-btn:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--vscode-editor-background);
+  border-bottom: 1px solid var(--vscode-widget-border);
+  flex-shrink: 0;
+}
+
+.preview-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--vscode-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.preview-hint {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.preview-btn {
+  min-width: 26px;
+  height: 24px;
+  padding: 0 6px;
+  background: var(--vscode-button-secondaryBackground);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.preview-btn:hover {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.preview-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  cursor: grab;
+}
+
+.preview-viewport.dragging {
+  cursor: grabbing;
+}
+
+.preview-content {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+  /* 内容不拦截鼠标事件，缩放/平移统一由 viewport 处理 */
+  pointer-events: none;
+}
+
+/* 预览内容按自然尺寸自由发挥：解除侧边栏的宽度/高度约束，
+   超出视口的内容通过缩放 + 平移查看（.preview-content 本身不设 overflow，
+   由 transform 缩放控制） */
+.preview-content img {
+  display: block;
+  pointer-events: none;
+  max-width: none;
+  max-height: none;
+  /* 解除侧边栏 width:100% 约束，按图片自然尺寸展示 */
+  width: auto;
+  height: auto;
+}
+
+.preview-content svg {
+  display: block;
+  max-width: none;
+  /* 与侧边栏 .md-mermaid 容器外观一致（背景/边框/内边距），保证内外渲染效果相同 */
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.preview-content table {
+  background: var(--vscode-editor-background);
+  color: var(--vscode-foreground);
+  /* 表格列宽按内容自然撑开，不被视口压缩 */
+  width: max-content;
+  max-width: none;
+}
+
+.preview-content pre {
+  margin: 0;
+  max-height: none;
+  overflow: visible;
+  white-space: pre;
+  /* 代码块按内容宽度自由伸展（不换行），至少占满视口宽度；
+     背景/边框/字体沿用 .md-code-block 统一样式，与侧边栏渲染保持一致 */
+  width: max-content;
+  min-width: 100%;
+}
+
+/* mermaid 重新渲染占位提示 */
+.preview-loading {
+  padding: 20px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* 可预览内容容器：为右上角预览按钮提供定位基准 */
+.md-image,
+.md-mermaid-image,
+.md-mermaid,
+.md-table-wrap,
+.md-code-block,
+.md-math-block {
+  position: relative;
+}
+
+/* 预览按钮：悬浮于容器右上角，hover 容器时显现，不拦截内容自身操作 */
+.preview-launch-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 5;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-foreground);
+  opacity: 0;
+  transition: opacity 0.15s;
+  cursor: zoom-in;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.preview-launch-btn:hover {
+  opacity: 1;
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.md-image:hover .preview-launch-btn,
+.md-mermaid-image:hover .preview-launch-btn,
+.md-mermaid:hover .preview-launch-btn,
+.md-table-wrap:hover .preview-launch-btn,
+.md-code-block:hover .preview-launch-btn,
+.md-math-block:hover .preview-launch-btn {
+  opacity: 0.85;
 }

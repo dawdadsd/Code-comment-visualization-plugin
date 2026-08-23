@@ -2,7 +2,10 @@
  * binarySearch.ts - 光标定位工具
  *
  * 在按 `startLine` 升序的方法列表中，
- * 使用二分查找定位“光标当前所在的方法”。
+ * 使用二分查找定位"光标当前所在的方法"。
+ *
+ * @author xiaowu
+ * @since 2026/02/04
  */
 
 import type { MethodDoc, LineNumber } from "../types.js";

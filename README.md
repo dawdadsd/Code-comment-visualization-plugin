@@ -5,6 +5,7 @@
 在 VS Code 侧边栏实时展示代码文档，当前支持 Java / TypeScript / JavaScript / Markdown，支持双向联动导航。
 插件市场 : comment sidebar
 author: [dawdadsd](https://github.com/dawdadsd)
+contributors: [xiaowuDev](https://github.com/xiaowuDev), [Frank Steven](https://github.com/Frank-Steven)
 
 ## 功能特性
 
@@ -16,23 +17,18 @@ author: [dawdadsd](https://github.com/dawdadsd)
 - `@param`、`@return`、`@throws` 等标签以表格形式展示
 - 可显示 Git 作者和最后修改时间（基于 `git blame` / `git log`）
 
-## 演示视频
+## 设置
 
-- [我开发了一个 VS Code 插件：看不同编程语言的 Doc 插件](https://www.bilibili.com/video/BV1ZYFHzgERT?vd_source=5cc5b352bbecf64c204775d57aa91764)
+| 设置项 | 说明 | 可选值 | 默认值 |
+|---|---|---|---|
+| `commentSidebar.codePreviewTheme.dark` | 编辑器为深色主题时，代码预览（Markdown 代码块/注释代码）的代码高亮主题 | `vs2015`、`catppuccin-frappe`、`catppuccin-macchiato`、`catppuccin-mocha` | `vs2015` |
+| `commentSidebar.codePreviewTheme.light` | 编辑器为浅色主题时，代码预览的代码高亮主题 | `github`、`catppuccin-latte` | `github` |
+
+内置了 [Catppuccin](https://github.com/catppuccin/highlightjs) 全部四种风味（Latte / Frappé / Macchiato / Mocha），按编辑器明暗分别配置默认主题，切换设置即时生效。
 
 ## 演示图片
 
-关于MD文档的演示
-![alt text](docs/images/images-1.png)
 
-关于Java代码的演示效果 :
-![alt text](docs/images/images-2.png)
-![alt text](docs/images/images-3.png)
-
-锁定显示的时候，进入其他代码类侧边栏不会变化 :
-![alt text](docs/images/image.png-1772677694890.png)
-
-TS代码和JS代码同理
 
 ## 环境要求（Git 作者信息）
 
@@ -43,23 +39,15 @@ TS代码和JS代码同理
 
 ## 使用方法
 
-1. 打开任意 Java / TypeScript / JavaScript 文件
-2. 点击左侧活动栏的 Doc Sidebar 图标
-3. 在侧边栏查看方法/函数文档
+1. 打开任意支持的文件
+2. 打开 Doc Sidebar 面板
+3. 查看方法/函数文档
 4. 点击方法名/函数名跳转到代码位置
-
-## 配置项
-
-| 配置项                               | 类型    | 默认值 | 说明                             |
-| ------------------------------------ | ------- | ------ | -------------------------------- |
-| `javaDocSidebar.enableAutoHighlight` | boolean | true   | 是否启用光标移动时的反向联动高亮 |
-| `javaDocSidebar.debounceDelay`       | number  | 300    | 反向联动的防抖延迟（毫秒）       |
-| `javaDocSidebar.maxMethods`          | number  | 200    | 侧边栏最多展示的方法数量         |
 
 ## 系统要求
 
 - VS Code 1.95.0 或更高版本
-- 解析 Java 文件时，建议安装 Java 语言支持扩展（用于 Symbol 解析能力增强）
+- 解析支持的文件时，建议安装对应的语言支持扩展（用于 Symbol 解析能力增强）
 
 ## 许可证
 

@@ -1,8 +1,11 @@
 /**
- * SymbolResolver.ts
+ * SymbolResolver.ts - 符号解析器
  *
- * Resolve symbols through VS Code's Document Symbol Provider and expose
- * small classification helpers reused by parsers.
+ * 通过 VS Code 的 Document Symbol Provider 解析符号，
+ * 并提供分类辅助函数供 parser 复用。
+ *
+ * @author xiaowu
+ * @since 2026/02/04
  */
 
 import * as vscode from "vscode";
@@ -33,7 +36,7 @@ const FIELD_KINDS: ReadonlySet<vscode.SymbolKind> = new Set([
 ]);
 
 interface CachedSymbols {
-  // document cache version -> used to check Consistency
+  // 文档缓存版本号，用于一致性校验
   readonly version: number;
   readonly symbols: DocumentSymbol[];
 }
@@ -42,7 +45,7 @@ const symbolCache = new Map<string, CachedSymbols>();
 const inFlightRequests = new Map<string, Promise<DocumentSymbol[]>>();
 
 /**
- * Clear symbol cache for one document.
+ * 清除单个文档的符号缓存。
  */
 export function clearSymbolCache(uri: Uri): void {
   const cacheKey = uri.toString();
@@ -51,7 +54,7 @@ export function clearSymbolCache(uri: Uri): void {
 }
 
 /**
- * Clear every cached/in-flight symbol entry.
+ * 清除所有缓存和进行中的符号请求。
  */
 export function clearAllSymbolCache(): void {
   symbolCache.clear();
@@ -59,12 +62,12 @@ export function clearAllSymbolCache(): void {
 }
 
 /**
- * Resolve symbols for a document URI.
+ * 解析指定文档 URI 的符号列表。
  *
- * Strategy:
- * - Return LRU cache hit for the same open-document version.
- * - Deduplicate concurrent requests for the same URI+version.
- * - Normalize provider output into DocumentSymbol[].
+ * 策略：
+ * - 相同版本号的打开文档命中 LRU 缓存时直接返回。
+ * - 对相同 URI+version 的并发请求做去重。
+ * - 将 provider 输出统一规范化为 DocumentSymbol[]。
  */
 export async function resolveSymbols(uri: Uri): Promise<DocumentSymbol[]> {
   const cacheKey = uri.toString();
@@ -85,10 +88,9 @@ export async function resolveSymbols(uri: Uri): Promise<DocumentSymbol[]> {
 
   const request = fetchAndNormalizeSymbols(uri)
     .then((symbols) => {
-      // Only cache non-empty results. TS/JS language server may return []
-      // on the first request for a JSX/JS file while it is still analyzing
-      // the document; caching that empty result would suppress subsequent
-      // refreshes until the document version changes.
+      // 仅缓存非空结果。TS/JS language server 在首次请求 JSX/JS 文件时
+      // 可能返回 []（仍在后台分析文档）；若缓存该空结果，会抑制后续刷新，
+      // 直到文档版本变化。
       if (version !== undefined && symbols.length > 0) {
         setCachedSymbols(cacheKey, version, symbols);
       }
@@ -103,49 +105,45 @@ export async function resolveSymbols(uri: Uri): Promise<DocumentSymbol[]> {
 }
 
 /**
- * Container kinds: Class / Interface / Enum.
+ * 容器类型：Class / Interface / Enum。
  */
 export function isClassLikeSymbol(symbol: DocumentSymbol): boolean {
   return CLASS_LIKE_KINDS.has(symbol.kind);
 }
 
 /**
- * Whether a Variable symbol holds a function (arrow function / function
- * expression).
+ * 判断一个 Variable 符号是否持有函数（箭头函数 / 函数表达式）。
  *
- * TS/JS language server reports `const f = () => {}` as SymbolKind.Variable
- * (not Function). Two detection paths:
- *   1. TS/TSX with type inference: `detail` contains the function signature
- *      (e.g. "(...args) => void"), so we check for "=>".
- *   2. JS/JSX without type inference: `detail` is empty. We fall back to
- *      `children.length > 0` because a function body yields child symbols
- *      (statements, nested declarations), while a plain value binding does
- *      not. This routes React components / hooks and plain JS arrow-function
- *      exports into methods so they are surfaced as callable members.
+ * TS/JS language server 会将 `const f = () => {}` 报告为 SymbolKind.Variable
+ * （而非 Function）。检测路径：
+ *   1. TS/TSX 带类型推断：`detail` 包含函数签名
+ *      （如 "(v) => number" 或 "(v): number"），检查是否匹配函数签名模式。
+ *   2. JS/JSX 无类型推断（detail 为空）：不再依据 `children.length > 0` 推断
+ *      —— 对象/数组字面量（如 `const x = Object.freeze({...})`）同样会产生
+ *      属性子符号，children 非空不足以证明持有函数；统一由 DocCommentParser
+ *      的源码文本检查（isFunctionVariableFromSource）兜底：扫描符号范围源码
+ *      是否含 `=>` 或 `function` 关键字，精确无误判。
  */
 function isFunctionVariableSymbol(symbol: DocumentSymbol): boolean {
   if (symbol.kind !== vscode.SymbolKind.Variable) {
     return false;
   }
-  if (symbol.detail.includes("=>")) {
-    return true;
-  }
-  // JS/JSX fallback: function bodies produce child symbols, value bindings do not.
-  return symbol.detail === "" && symbol.children.length > 0;
+  // 路径 1：detail 包含函数签名模式（带类型推断的 TS/TSX）
+  return /\([^)]*\)\s*(?:=>|:)/.test(symbol.detail);
 }
 
 /**
- * Callable member kinds: Method / Constructor / Function, plus function-typed
- * Variables (arrow function / function expression assignments in JS/TS).
+ * 可调用成员类型：Method / Constructor / Function，以及函数类型的
+ * Variable（JS/TS 中的箭头函数 / 函数表达式赋值）。
  */
 export function isMethodSymbol(symbol: DocumentSymbol): boolean {
   return METHOD_KINDS.has(symbol.kind) || isFunctionVariableSymbol(symbol);
 }
 
 /**
- * Data member kinds: Field / Constant (excludes EnumMember), plus non-function
- * Variables (value bindings in JS/TS). Mutually exclusive with isMethodSymbol:
- * a function-typed Variable is treated as a method, never a field.
+ * 数据成员类型：Field / Constant（不含 EnumMember），以及非函数类型的
+ * Variable（JS/TS 中的值绑定）。与 isMethodSymbol 互斥：
+ * 函数类型的 Variable 一律视为方法，绝不归为字段。
  */
 export function isFieldSymbol(symbol: DocumentSymbol): boolean {
   return (
@@ -156,14 +154,14 @@ export function isFieldSymbol(symbol: DocumentSymbol): boolean {
 }
 
 /**
- * Enum member kind.
+ * 枚举成员类型。
  */
 export function isEnumMemberSymbol(symbol: DocumentSymbol): boolean {
   return symbol.kind === vscode.SymbolKind.EnumMember;
 }
 
 /**
- * Constructor kind.
+ * 构造函数类型。
  */
 export function isConstructorSymbol(symbol: DocumentSymbol): boolean {
   return symbol.kind === vscode.SymbolKind.Constructor;
@@ -186,7 +184,7 @@ function getCachedSymbols(
     return undefined;
   }
 
-  // Promote hit to the end of insertion order (simple LRU behavior).
+  // 将命中项提升到插入顺序末尾（简单的 LRU 行为）。
   symbolCache.delete(cacheKey);
   symbolCache.set(cacheKey, cached);
   return cached.symbols;
